@@ -105,9 +105,12 @@ test('normalizeDomain rejects non-domains', () => {
 test('buildProxyConfig adds exceptions with subdomain wildcard', () => {
   const config = buildProxyConfig({ scheme: 'http', host: 'h', port: 1 }, ['example.com']);
 
-  assert.ok(config.rules.bypassList.includes('example.com'));
-  assert.ok(config.rules.bypassList.includes('*.example.com'));
-  assert.ok(config.rules.bypassList.includes('localhost'));
+  const bypassEntries = new Set(config.rules.bypassList);
+
+  assert.deepEqual(
+    ['example.com', '*.example.com', 'localhost'].map((entry) => bypassEntries.has(entry)),
+    [true, true, true],
+  );
 });
 
 test('buildProxyConfig adds RU zones when bypassRu is on', () => {
