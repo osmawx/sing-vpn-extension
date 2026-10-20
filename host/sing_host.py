@@ -197,9 +197,12 @@ def load_cached_subscription():
 
 def save_cached_subscription(locations):
     """Сохраняет список серверов подписки (без секретов: только имена)."""
-    os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
-    with open(CACHE_FILE, "w", encoding="utf-8") as cache_file:
+    os.makedirs(os.path.dirname(CACHE_FILE), mode=0o700, exist_ok=True)
+    # Файл только для владельца: даже имена серверов подписки не для чужих глаз
+    file_descriptor = os.open(CACHE_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(file_descriptor, "w", encoding="utf-8") as cache_file:
         json.dump(locations, cache_file, ensure_ascii=False)
+    os.chmod(CACHE_FILE, 0o600)
 
 
 def fetch_locations():

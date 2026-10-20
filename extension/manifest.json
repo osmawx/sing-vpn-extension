@@ -28,11 +28,15 @@
   "permissions": [
     "activeTab",
     "nativeMessaging",
+    "privacy",
     "proxy",
     "storage",
     "webRequest",
     "webRequestAuthProvider"
   ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"
+  },
   "host_permissions": [
     "<all_urls>"
   ]

@@ -27,6 +27,23 @@ async function updateBadge(isConnected) {
 }
 
 /**
+ * Включает или снимает защиту от утечки реального IP через WebRTC (UDP мимо прокси).
+ * Сбой не должен ломать подключение: политику может держать другое расширение.
+ * @param {boolean} isProtected - true при подключении, false при отключении.
+ */
+async function setWebRtcProtection(isProtected) {
+  try {
+    if (isProtected) {
+      await chrome.privacy.network.webRTCIPHandlingPolicy.set({ value: 'disable_non_proxied_udp' });
+    } else {
+      await chrome.privacy.network.webRTCIPHandlingPolicy.clear({});
+    }
+  } catch (error) {
+    console.warn('WebRTC policy not changed:', error.message);
+  }
+}
+
+/**
  * Подключается к серверу из списка.
  * @param {string} serverId - id сервера.
  * @returns {Promise<object>} {ok, connectedId} либо {ok: false, error}.
@@ -51,6 +68,7 @@ async function connect(serverId) {
     return { ok: false, error: 'Proxy is controlled by another extension or policy' };
   }
   await chrome.storage.local.set({ connectedId: server.id, lastUsedId: server.id });
+  await setWebRtcProtection(true);
   await updateBadge(true);
   return { ok: true, connectedId: server.id };
 }
@@ -131,6 +149,7 @@ async function refreshSing() {
 async function disconnect() {
   await chrome.proxy.settings.clear({ scope: 'regular' });
   await chrome.storage.local.set({ connectedId: null });
+  await setWebRtcProtection(false);
   await updateBadge(false);
   return { ok: true, connectedId: null };
 }
@@ -326,7 +345,9 @@ chrome.webRequest.onAuthRequired.addListener(
     }
     readState().then(({ servers, connectedId }) => {
       const server = servers.find((item) => item.id === connectedId);
-      const matchesChallenger = server && details.challenger?.host === server.host;
+      // Пароль отдаём только самому прокси: совпадают и хост, и порт
+      const matchesChallenger = server && details.challenger?.host === server.host
+        && Number(details.challenger?.port) === Number(server.port);
       if (!matchesChallenger || !server.username) {
         respond({});
         return;
