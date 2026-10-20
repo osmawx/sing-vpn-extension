@@ -50,6 +50,10 @@ Home shows the two fastest servers of your local `sing`. The host starts a tempo
 
 Servers and credentials are stored in `chrome.storage.local` (unencrypted, on this machine only).
 
+## Security and privacy
+
+See [SECURITY.md](SECURITY.md) and [PRIVACY.md](PRIVACY.md). Licensed under [MIT](LICENSE); contributions: [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## Tests
 
 ```bash
