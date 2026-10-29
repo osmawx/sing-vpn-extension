@@ -15,7 +15,7 @@ Run `npm ci && npm run build`, then load `build/` unpacked in `chrome://extensio
 npm ci
 npm run build
 npm test
-python3 -m unittest discover -s tests -p "test_sing_host.py"
+python3 -m unittest discover -s tests -p "test_*.py"
 shellcheck install.sh
 ```
 

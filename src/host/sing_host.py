@@ -13,6 +13,7 @@ import os
 import re
 import secrets
 import socket
+import stat
 import struct
 import subprocess
 import sys
@@ -56,6 +57,8 @@ MAX_NAME_LENGTH = 200
 UPDATE_REPOSITORY_URL = "https://github.com/osmawx/sing-vpn-extension.git"
 UPDATE_GIT_TIMEOUT_SECONDS = 120
 UPDATE_BUILD_TIMEOUT_SECONDS = 180
+MAX_CONFIGURATION_BYTES = 512 * 1024
+CONFIGURATION_FILES = ("sing.sub", "custom.txt", "exceptions.json", "sing.current", "sing.json")
 # Имена, которые `sing select` воспринимает как подкоманды, а не как сервер
 RESERVED_NAMES = frozenset({"add", "rm", "remove"})
 GROUP_HEADERS = {"— свои:": "custom", "— подписка:": "subscription"}
@@ -436,6 +439,127 @@ def handle_ping(_message):
     return {"singInstalled": os.access(SING_BIN, os.X_OK)}
 
 
+def validate_sing_configuration(data):
+    """Проверяет переносимые исходники sing через его парсер без запуска соединения."""
+    if not isinstance(data, dict) or len(json.dumps(data).encode()) > MAX_CONFIGURATION_BYTES:
+        raise ValueError("invalid or oversized sing configuration")
+    subscription = data.get("subscriptionUrl")
+    links = data.get("customLinks")
+    exceptions = data.get("exceptions")
+    if not isinstance(subscription, str) or any(character in subscription for character in "\r\n\0"):
+        raise ValueError("invalid sing subscription")
+    if subscription:
+        try:
+            parsed = urlsplit(subscription)
+            if parsed.scheme not in ("http", "https") or not parsed.hostname:
+                raise ValueError()
+        except ValueError:
+            raise ValueError("invalid sing subscription") from None
+    if not isinstance(links, list) or len(links) > 1000 or not all(
+            isinstance(link, str) and len(link) <= 10000 and not any(char in link for char in "\r\n\0")
+            for link in links):
+        raise ValueError("invalid custom links")
+    if not isinstance(exceptions, dict) or not isinstance(exceptions.get("domains"), list) or len(
+            exceptions["domains"]) > 1000 or not isinstance(exceptions.get("bypassRu"), bool):
+        raise ValueError("invalid sing exceptions")
+    selector = load_select_module()
+    try:
+        for link in links:
+            selector.build_outbound(link)
+        domains = [selector.normalize_domain(domain) if isinstance(domain, str) else None
+                   for domain in exceptions["domains"]]
+        if not all(domains):
+            raise ValueError()
+    except Exception:
+        # Парсер протокола может включать секретную ссылку в текст исключения.
+        raise ValueError("invalid custom proxy or exception") from None
+    return {"subscriptionUrl": subscription, "customLinks": links,
+            "exceptions": {"domains": list(dict.fromkeys(domains)), "bypassRu": exceptions["bypassRu"]}}
+
+
+def read_configuration_file(filename):
+    """Читает только обычный файл фиксированного набора, не следуя symlink."""
+    path = os.path.join(CONFIG_DIR, filename)
+    if not os.path.lexists(path):
+        return None
+    if not stat.S_ISREG(os.lstat(path).st_mode):
+        raise ValueError("configuration path must be a regular file")
+    with open(path, encoding="utf-8") as source:
+        contents = source.read(MAX_CONFIGURATION_BYTES + 1)
+    if len(contents.encode()) > MAX_CONFIGURATION_BYTES:
+        raise ValueError("sing configuration is too large")
+    return contents
+
+
+def write_private_file(path, contents):
+    """Атомарно записывает файл с секретами и правами 0600."""
+    descriptor, temporary_path = tempfile.mkstemp(dir=os.path.dirname(path))
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+            output.write(contents)
+        os.replace(temporary_path, path)
+    finally:
+        if os.path.exists(temporary_path):
+            os.unlink(temporary_path)
+
+
+def handle_export_configuration(_message):
+    """Экспортирует исходные настройки sing без готового sing.json и состояния процесса."""
+    subscription = (read_configuration_file("sing.sub") or "").strip()
+    custom = read_configuration_file("custom.txt") or ""
+    exceptions = json.loads(read_configuration_file("exceptions.json") or '{}')
+    data = {"subscriptionUrl": subscription,
+            "customLinks": [line.strip() for line in custom.splitlines() if line.strip() and not line.lstrip().startswith("#")],
+            "exceptions": {"domains": exceptions.get("domains", []), "bypassRu": exceptions.get("bypass_ru", False)}}
+    return {"configuration": validate_sing_configuration(data)}
+
+
+def handle_validate_configuration(message):
+    """Проверяет конфигурацию до отключения активного соединения."""
+    validate_sing_configuration(message.get("configuration"))
+    return {}
+
+
+def handle_import_configuration(message):
+    """Сохраняет backup, останавливает sing и восстанавливает исходники без автоподключения."""
+    data = validate_sing_configuration(message.get("configuration"))
+    if os.path.islink(CONFIG_DIR):
+        raise ValueError("configuration directory must not be a symlink")
+    os.makedirs(CONFIG_DIR, mode=0o700, exist_ok=True)
+    previous = {name: read_configuration_file(name) for name in CONFIGURATION_FILES}
+    backup = tempfile.mkdtemp(prefix="import-backup-", dir=CONFIG_DIR)
+    for name, contents in previous.items():
+        if contents is not None:
+            write_private_file(os.path.join(backup, name), contents)
+    code, _output, _error = run_sing(["stop"], SELECT_TIMEOUT_SECONDS)
+    if code != 0:
+        raise RuntimeError("cannot stop sing before import")
+    contents = {
+        "sing.sub": data["subscriptionUrl"] + "\n",
+        "custom.txt": "\n".join(data["customLinks"]) + "\n",
+        "exceptions.json": json.dumps({"domains": data["exceptions"]["domains"],
+                                      "bypass_ru": data["exceptions"]["bypassRu"]}),
+    }
+    try:
+        for name in CONFIGURATION_FILES:
+            target = os.path.join(CONFIG_DIR, name)
+            if name in contents:
+                write_private_file(target, contents[name])
+            elif os.path.lexists(target):
+                os.unlink(target)
+    except OSError:
+        for name, original in previous.items():
+            target = os.path.join(CONFIG_DIR, name)
+            if original is not None:
+                write_private_file(target, original)
+            elif os.path.lexists(target):
+                os.unlink(target)
+        raise RuntimeError("sing import failed; previous files restored") from None
+    if os.path.lexists(CACHE_FILE):
+        os.unlink(CACHE_FILE)
+    return {"backup": backup}
+
+
 def run_update_command(arguments, timeout_seconds):
     """Запускает фиксированную команду обновления в checkout без shell и вывода секретов."""
     environment = child_environment()
@@ -502,7 +626,8 @@ def handle_update(_message):
 
 
 # Действия, которым нужен установленный `sing`; без него расширение работает в режиме «только браузер»
-ACTIONS_NEEDING_SING = {"list", "connect", "latency", "exceptions_get", "exceptions_set"}
+ACTIONS_NEEDING_SING = {"list", "connect", "latency", "exceptions_get", "exceptions_set",
+                        "export_configuration", "validate_configuration", "import_configuration"}
 
 ACTION_HANDLERS = {
     "list": handle_list,
@@ -514,6 +639,9 @@ ACTION_HANDLERS = {
     "ping": handle_ping,
     "update": handle_update,
     "check_update": handle_check_update,
+    "export_configuration": handle_export_configuration,
+    "validate_configuration": handle_validate_configuration,
+    "import_configuration": handle_import_configuration,
 }
 
 

@@ -1,5 +1,6 @@
 // Service worker: хранит серверы, включает/выключает прокси браузера, отдаёт логин/пароль прокси.
 import { buildProxyConfig, normalizeDomain, parseProxyList } from './proxy-links.js';
+import { createConfiguration, parseConfiguration } from './configuration.js';
 
 const HOST_NAME = 'com.singvpn.host';
 // Локальный sing-box (команда `sing`) слушает mixed-инбаунд на 127.0.0.1:1080
@@ -307,6 +308,27 @@ async function checkForUpdates() {
   return result;
 }
 
+/** Экспортирует переносимые настройки браузера и исходники локального sing. */
+async function exportConfiguration() {
+  const native = await callHost({ action: 'export_configuration' });
+  if (!native.ok) { return native; }
+  return { ok: true, configuration: createConfiguration(await readState(), native.configuration, chrome.runtime.getManifest().version) };
+}
+
+/** Проверяет весь файл, затем восстанавливает оба набора настроек без подключения. */
+async function importConfiguration(text) {
+  const configuration = parseConfiguration(text);
+  const validated = await callHost({ action: 'validate_configuration', configuration: configuration.sing });
+  if (!validated.ok) { return validated; }
+  await disconnect();
+  const imported = await callHost({ action: 'import_configuration', configuration: configuration.sing });
+  if (!imported.ok) { return imported; }
+  await chrome.storage.local.set({
+    ...configuration.browser, singServers: [], latencies: {}, connectedId: null, lastUsedId: null,
+  });
+  return { ok: true, backup: imported.backup };
+}
+
 const MESSAGE_HANDLERS = {
   connect: (message) => connect(message.serverId),
   disconnect: () => disconnect(),
@@ -316,6 +338,8 @@ const MESSAGE_HANDLERS = {
   refreshSing: () => refreshSing(),
   updateExtension: () => callHost({ action: 'update' }),
   checkForUpdates: () => checkForUpdates(),
+  exportConfiguration: () => exportConfiguration(),
+  importConfiguration: (message) => importConfiguration(message.text),
   addException: (message) => addException(message.domain),
   removeException: (message) => removeException(message.domain),
   setBypassRu: (message) => setBypassRu(message.enabled),
