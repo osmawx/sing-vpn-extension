@@ -43,6 +43,8 @@ async function buildExtension() {
     await writeFile(path.join(stagingDirectory, 'popup.html'), `${minifiedMarkup}\n`);
 
     const manifest = JSON.parse(await readFile(path.join(SOURCE_DIR, 'manifest.json'), 'utf8'));
+    const packageMetadata = JSON.parse(await readFile(path.join(PROJECT_DIR, 'package.json'), 'utf8'));
+    manifest.version = packageMetadata.version;
     await writeFile(path.join(stagingDirectory, 'manifest.json'), `${JSON.stringify(manifest)}\n`);
 
     // Заменяем работающую сборку только после успешной обработки всех файлов.

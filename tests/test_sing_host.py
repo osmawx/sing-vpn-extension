@@ -136,6 +136,31 @@ class UpdateTest(unittest.TestCase):
         self.assertEqual(response, {"ok": False, "error": "local changes prevent update"})
         self.assertEqual(run_command.call_count, 1)
 
+    def test_check_reports_new_remote_revision_without_changing_checkout(self):
+        """Проверка новых коммитов не делает pull, install или build."""
+        revision = "a" * 40
+        results = [
+            subprocess.CompletedProcess([], 0, stdout=f"{revision}\trefs/heads/main\n", stderr=""),
+            subprocess.CompletedProcess([], 128, stdout="", stderr="unknown revision"),
+        ]
+        with patch.object(sing_host.subprocess, "run", side_effect=results) as run_command:
+            response = sing_host.dispatch({"action": "check_update"})
+        self.assertEqual(response, {"ok": True, "available": True})
+        self.assertEqual(run_command.call_args_list[0].args[0],
+                         ["git", "ls-remote", sing_host.UPDATE_REPOSITORY_URL, "refs/heads/main"])
+        self.assertEqual(run_command.call_args_list[1].args[0],
+                         ["git", "merge-base", "--is-ancestor", revision, "HEAD"])
+
+    def test_check_does_not_offer_older_remote_revision(self):
+        """Локальная ветка впереди main не получает ложного уведомления."""
+        results = [
+            subprocess.CompletedProcess([], 0, stdout=f"{'b' * 40}\trefs/heads/main\n", stderr=""),
+            subprocess.CompletedProcess([], 0, stdout="", stderr=""),
+        ]
+        with patch.object(sing_host.subprocess, "run", side_effect=results):
+            response = sing_host.dispatch({"action": "check_update"})
+        self.assertEqual(response, {"ok": True, "available": False})
+
     def test_requires_git_checkout(self):
         """Обновление не запускает команды вне Git checkout."""
         (self.repository / ".git").rmdir()

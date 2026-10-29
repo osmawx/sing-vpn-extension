@@ -6,15 +6,20 @@ test('temporary host failure keeps cached sing locations', async () => {
   const storage = { servers: [], singServers: [cachedLocation], connectedId: cachedLocation.id };
   let messageListener;
   let proxyClears = 0;
+  const startupListeners = [];
   const addListener = () => {};
 
   globalThis.chrome = {
     runtime: {
       id: 'test-extension',
       onMessage: { addListener: (listener) => { messageListener = listener; } },
-      onStartup: { addListener },
+      onStartup: { addListener: (listener) => startupListeners.push(listener) },
       onInstalled: { addListener },
       sendNativeMessage: (_name, _message, reply) => {
+        if (_message.action === 'check_update') {
+          reply({ ok: true, available: true });
+          return;
+        }
         chrome.runtime.lastError = { message: 'Native host not found' };
         reply(undefined);
         delete chrome.runtime.lastError;
@@ -44,6 +49,8 @@ test('temporary host failure keeps cached sing locations', async () => {
     assert.deepEqual(storage.singServers, [cachedLocation]);
     assert.equal(storage.connectedId, null);
     assert.equal(proxyClears, 1);
+    await startupListeners[1]();
+    assert.deepEqual(storage.extensionUpdate, { ok: true, available: true });
   } finally {
     delete globalThis.chrome;
   }
