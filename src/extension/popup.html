@@ -75,6 +75,14 @@
         <p id="exception-message" class="error" hidden></p>
         <button id="update-extension" class="primary update-button" type="button">Update extension</button>
         <p id="update-message" class="hint muted" role="status" hidden></p>
+        <h2 class="subheading">Configuration</h2>
+        <p class="hint muted">Backup includes passwords, subscription URLs and local sing servers. Keep the file private.</p>
+        <div class="configuration-actions">
+          <button id="export-configuration" class="primary" type="button">Export configuration</button>
+          <button id="import-configuration" class="primary" type="button">Import configuration</button>
+        </div>
+        <input id="configuration-file" type="file" accept=".json,application/json" hidden>
+        <p id="configuration-message" class="hint muted" role="status" hidden></p>
         <button id="forget-all" class="danger-link" type="button">Remove all servers</button>
       </section>
     </main>

@@ -53,6 +53,12 @@ The build minifies JavaScript, CSS and HTML, removes comments, and copies icons.
 
 Account shows the installed version. The extension checks for new commits when the browser starts and whenever the popup opens. An available update appears above the popup content and in Account. These checks do not install anything or change the checkout. If the local branch already contains the public main revision, no update is offered.
 
+## Configuration backup
+
+In Account, use **Export configuration** to download a JSON backup of browser proxies, credentials, subscription URL and exceptions, together with local sing custom links, subscription URL and exceptions. The native host is required. The file is not encrypted and contains secrets; keep it private.
+
+**Import configuration** validates the file and asks for confirmation before replacing settings. It disconnects the browser, stops local sing and backs up existing sing files in a private `~/.config/sing-box/import-backup-*` directory. Imported files have permissions `0600`. A failed file write restores previous sing files. Cached locations and generated sing-box configuration are rebuilt when you select a server; active connections and the previous selection are not restored automatically. Subscription servers are fetched from the saved URL, so restoring those locations requires access to the subscription provider.
+
 In **Account**, press **Update extension**. The native host checks that the Git checkout has no local changes, runs `git pull --ff-only https://github.com/osmawx/sing-vpn-extension.git main`, then runs `npm ci` and `npm run build`. After a successful update, the extension reloads itself. HTTPS avoids SSH keys and custom SSH aliases. The current branch does not need an upstream; Git still rejects divergent history. If Git, npm or the build fails, the button shows an error. The button needs the native host installed with `./install.sh`.
 
 ## Fastest locations
@@ -77,5 +83,5 @@ See [SECURITY.md](SECURITY.md) and [PRIVACY.md](PRIVACY.md). Licensed under [MIT
 npm ci
 npm run build
 npm test
-python3 -m unittest discover -s tests -p "test_sing_host.py"
+python3 -m unittest discover -s tests -p "test_*.py"
 ```

@@ -1,5 +1,7 @@
 # Privacy
 
+Configuration export creates a local, unencrypted JSON file containing browser proxy credentials, subscription URLs, exceptions and local sing custom links. Export requires an explicit button click. Import replaces settings only after confirmation and keeps private backups of previous local sing files. These files are not uploaded by the extension; protect exported files and backups as secrets.
+
 Sing VPN has no servers, accounts, analytics or telemetry. Everything stays on your machine.
 
 ## Stored locally

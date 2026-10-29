@@ -1,6 +1,7 @@
 // UI popup: Home / Locations / Account. Вся логика подключения — в background.js.
 
 import { normalizeDomain } from './proxy-links.js';
+import { MAX_CONFIGURATION_BYTES, parseConfiguration } from './configuration.js';
 
 const FAST_SERVER_COUNT = 2;
 const HOST_NAME = 'com.singvpn.host';
@@ -21,6 +22,7 @@ const elements = Object.fromEntries(
 
 let latencyHistory = {};
 let liveLatency = null;
+let latencyPort = null;
 let state = { servers: [], singServers: [], latencies: {}, exceptions: [], bypassRu: false, connectedId: null, lastUsedId: null };
 
 /**
@@ -312,8 +314,10 @@ function updateLatencyLabels() {
  * пока попап открыт. Закрытие попапа закрывает порт, и host гасит временный sing-box.
  */
 function startLatencyStream() {
+  latencyPort?.disconnect();
   renderFastList(true);
   const port = chrome.runtime.connectNative(HOST_NAME);
+  latencyPort = port;
   port.onMessage.addListener((message) => {
     if (!message.ok) {
       return;
@@ -525,6 +529,75 @@ async function updateExtension() {
 }
 
 elements['update-extension'].addEventListener('click', updateExtension);
+
+/** Блокирует действия с файлом на время импорта или экспорта. */
+function setConfigurationBusy(busy) {
+  elements['export-configuration'].disabled = busy;
+  elements['import-configuration'].disabled = busy;
+}
+
+/** Показывает результат работы с файлом без содержимого конфигурации. */
+function showConfigurationMessage(text, failed = false) {
+  elements['configuration-message'].hidden = false;
+  elements['configuration-message'].className = failed ? 'error' : 'hint muted';
+  elements['configuration-message'].textContent = text;
+}
+
+/** Скачивает JSON с настройками расширения и локального sing. */
+async function exportConfigurationFile() {
+  setConfigurationBusy(true);
+  try {
+    const result = await send({ type: 'exportConfiguration' });
+    if (!result.ok) {
+      throw new Error(result.hostMissing ? 'Run ./install.sh to enable full backups.' : result.error);
+    }
+    const url = URL.createObjectURL(new Blob([JSON.stringify(result.configuration, null, 2)], { type: 'application/json' }));
+    const download = document.createElement('a');
+    download.href = url;
+    download.download = `sing-vpn-${chrome.runtime.getManifest().version}.json`;
+    download.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    showConfigurationMessage('Backup downloaded. Keep it private: it contains credentials.');
+  } catch (error) {
+    showConfigurationMessage(error.message, true);
+  } finally {
+    setConfigurationBusy(false);
+  }
+}
+
+/** Проверяет файл и подтверждает замену настроек до отправки native host. */
+async function importConfigurationFile() {
+  const file = elements['configuration-file'].files[0];
+  if (!file) { return; }
+  setConfigurationBusy(true);
+  try {
+    if (file.size > MAX_CONFIGURATION_BYTES) { throw new Error('Configuration file is too large.'); }
+    const text = await file.text();
+    parseConfiguration(text);
+    if (!confirm('Replace extension and local sing settings? This stops sing and disconnects the browser. Existing sing files will be backed up.')) {
+      return;
+    }
+    latencyPort?.disconnect();
+    latencyPort = null;
+    const result = await send({ type: 'importConfiguration', text });
+    if (!result.ok) {
+      throw new Error(result.hostMissing ? 'Run ./install.sh before importing.' : result.error);
+    }
+    latencyHistory = {};
+    await refreshAll();
+    showConfigurationMessage(`Configuration imported. Choose a location to connect. Previous sing files: ${result.backup}`);
+    refreshSingList();
+  } catch (error) {
+    showConfigurationMessage(error.message, true);
+  } finally {
+    elements['configuration-file'].value = '';
+    setConfigurationBusy(false);
+  }
+}
+
+elements['export-configuration'].addEventListener('click', exportConfigurationFile);
+elements['import-configuration'].addEventListener('click', () => elements['configuration-file'].click());
+elements['configuration-file'].addEventListener('change', importConfigurationFile);
 
 /** Показывает результат проверки, не мешая выполняющемуся обновлению. */
 function renderUpdateStatus(result) {
