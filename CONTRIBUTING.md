@@ -27,3 +27,4 @@ shellcheck install.sh
 - One change per pull request. Never commit `extension-key.pem`, subscription URLs, proxy links or real credentials.
 - Commit messages follow Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`, `ci:`, `chore:`).
 - Credit AI-assisted commits with the exact model name and no email address, for example `Co-Authored-By: GPT-6.1 Sol`. Keep Git author and committer identities unchanged.
+- Bump `package.json` and the matching lockfile version for releases. Keep `src/extension/manifest.json` in sync; the build uses the package version for the generated manifest.

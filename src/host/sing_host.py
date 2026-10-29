@@ -450,6 +450,25 @@ def run_update_command(arguments, timeout_seconds):
         raise RuntimeError("update timed out") from error
 
 
+def handle_check_update(_message):
+    """Сравнивает публичный main с checkout без скачивания и установки кода."""
+    if not os.path.exists(os.path.join(REPOSITORY_DIR, ".git")):
+        raise RuntimeError("update requires a Git checkout")
+    remote = run_update_command(
+        ["git", "ls-remote", UPDATE_REPOSITORY_URL, "refs/heads/main"], 20,
+    )
+    if remote.returncode != 0:
+        raise RuntimeError("update check failed; check GitHub access")
+    revision = remote.stdout.split()[0] if remote.stdout.strip() else ""
+    if not re.fullmatch(r"[0-9a-f]{40}", revision):
+        raise RuntimeError("cannot read latest revision")
+    # Не предлагаем обновление, если локальная ветка уже содержит публичный main.
+    ancestor = run_update_command(
+        ["git", "merge-base", "--is-ancestor", revision, "HEAD"], 10,
+    )
+    return {"available": ancestor.returncode != 0}
+
+
 def handle_update(_message):
     """Получает fast-forward из публичного main по HTTPS и пересобирает расширение."""
     if not os.path.exists(os.path.join(REPOSITORY_DIR, ".git")):
@@ -494,6 +513,7 @@ ACTION_HANDLERS = {
     "exceptions_set": handle_exceptions_set,
     "ping": handle_ping,
     "update": handle_update,
+    "check_update": handle_check_update,
 }
 
 

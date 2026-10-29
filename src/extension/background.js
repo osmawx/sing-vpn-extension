@@ -300,6 +300,13 @@ async function syncBadge() {
   await updateBadge(Boolean(connectedId));
 }
 
+/** Проверяет обновления без установки и сохраняет результат для следующего popup. */
+async function checkForUpdates() {
+  const result = await callHost({ action: 'check_update' });
+  await chrome.storage.local.set({ extensionUpdate: result });
+  return result;
+}
+
 const MESSAGE_HANDLERS = {
   connect: (message) => connect(message.serverId),
   disconnect: () => disconnect(),
@@ -308,6 +315,7 @@ const MESSAGE_HANDLERS = {
   forgetAll: () => forgetAll(),
   refreshSing: () => refreshSing(),
   updateExtension: () => callHost({ action: 'update' }),
+  checkForUpdates: () => checkForUpdates(),
   addException: (message) => addException(message.domain),
   removeException: (message) => removeException(message.domain),
   setBypassRu: (message) => setBypassRu(message.enabled),
@@ -359,4 +367,5 @@ chrome.webRequest.onCompleted.addListener(forgetRequest, { urls: ['<all_urls>'] 
 chrome.webRequest.onErrorOccurred.addListener(forgetRequest, { urls: ['<all_urls>'] });
 
 chrome.runtime.onStartup.addListener(syncBadge);
+chrome.runtime.onStartup.addListener(checkForUpdates);
 chrome.runtime.onInstalled.addListener(syncBadge);

@@ -16,6 +16,8 @@ async function readProjectFile(directory, filename) {
 test('build contains valid minified extension assets', async () => {
   const manifest = JSON.parse(await readProjectFile('build', 'manifest.json'));
   assert.equal(manifest.background.service_worker, 'background.js');
+  const packageMetadata = JSON.parse(await readProjectFile('.', 'package.json'));
+  assert.equal(manifest.version, packageMetadata.version);
 
   for (const filename of ['background.js', 'popup.js', 'proxy-links.js', 'popup.css', 'popup.html']) {
     const source = await readProjectFile('src/extension', filename);
@@ -28,6 +30,8 @@ test('build contains valid minified extension assets', async () => {
   assert.match(markup, /src="popup\.js"/);
   assert.match(markup, /href="popup\.css"/);
   assert.match(markup, /id="update-extension"/);
+  assert.match(markup, /id="acc-version"/);
+  assert.match(markup, /id="update-notice"/);
   assert.match(await readProjectFile('build', 'background.js'), /action:"update"/);
   for (const filename of ['16.png', '32.png', '48.png', '128.png']) {
     assert.ok((await stat(path.join(PROJECT_DIR, 'build', 'icons', filename))).size > 0);

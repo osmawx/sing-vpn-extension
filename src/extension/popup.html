@@ -8,6 +8,7 @@
   </head>
   <body>
     <div id="ip-banner" class="ip-banner">Checking IP…</div>
+    <p id="update-notice" class="hint" role="status" hidden></p>
 
     <main>
       <section id="view-home" class="view">
@@ -54,6 +55,7 @@
       <section id="view-account" class="view" hidden>
         <h1>Account</h1>
         <dl class="card account-list">
+          <dt>Version</dt><dd id="acc-version">—</dd>
           <dt>Servers</dt><dd id="acc-count">0</dd>
           <dt>Proxy</dt><dd id="acc-proxy">—</dd>
           <dt>IP</dt><dd id="acc-ip">—</dd>

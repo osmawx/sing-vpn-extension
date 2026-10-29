@@ -526,6 +526,29 @@ async function updateExtension() {
 
 elements['update-extension'].addEventListener('click', updateExtension);
 
+/** Показывает результат проверки, не мешая выполняющемуся обновлению. */
+function renderUpdateStatus(result) {
+  if (!result || elements['update-extension'].disabled) {
+    return;
+  }
+  const available = result.ok && result.available;
+  elements['update-notice'].hidden = !available;
+  elements['update-notice'].textContent = available ? 'Update available — open Account to install.' : '';
+  elements['update-message'].hidden = false;
+  elements['update-message'].className = 'hint muted';
+  elements['update-message'].textContent = result.ok
+    ? (available ? 'Update available.' : 'Already up to date.')
+    : (result.hostMissing ? 'Run ./install.sh to enable update checks.' : 'Could not check for updates. Try again later.');
+}
+
+/** Показывает версию и проверяет обновление при открытии popup. */
+async function refreshUpdateStatus() {
+  elements['acc-version'].textContent = chrome.runtime.getManifest().version;
+  const { extensionUpdate } = await chrome.storage.local.get(['extensionUpdate']);
+  renderUpdateStatus(extensionUpdate);
+  renderUpdateStatus(await send({ type: 'checkForUpdates' }));
+}
+
 /** Подтягивает список локального sing; без host показывает подсказку. */
 async function refreshSingList() {
   const result = await send({ type: 'refreshSing' });
@@ -548,6 +571,7 @@ async function refreshSingList() {
   await loadState();
   elements['add-subscription'].value = state.subscriptionUrl ?? '';
   renderAll();
+  refreshUpdateStatus();
   refreshSingList();
   send({ type: 'syncExceptions' }).then(refreshAll);
   setInterval(pingConnection, LIVE_PING_INTERVAL_MS);

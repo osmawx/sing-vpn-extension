@@ -51,6 +51,8 @@ The build minifies JavaScript, CSS and HTML, removes comments, and copies icons.
 
 ## Update from the extension
 
+Account shows the installed version. The extension checks for new commits when the browser starts and whenever the popup opens. An available update appears above the popup content and in Account. These checks do not install anything or change the checkout. If the local branch already contains the public main revision, no update is offered.
+
 In **Account**, press **Update extension**. The native host checks that the Git checkout has no local changes, runs `git pull --ff-only https://github.com/osmawx/sing-vpn-extension.git main`, then runs `npm ci` and `npm run build`. After a successful update, the extension reloads itself. HTTPS avoids SSH keys and custom SSH aliases. The current branch does not need an upstream; Git still rejects divergent history. If Git, npm or the build fails, the button shows an error. The button needs the native host installed with `./install.sh`.
 
 ## Fastest locations
