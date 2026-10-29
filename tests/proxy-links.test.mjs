@@ -4,7 +4,7 @@ import { test } from 'node:test';
 
 import {
   buildProxyConfig, normalizeDomain, parseProxyLink, parseProxyList, splitLocationName,
-} from '../extension/proxy-links.js';
+} from '../src/extension/proxy-links.js';
 
 test('splitLocationName extracts flag, city and country', () => {
   const parts = splitLocationName('🇱🇹 Вильнюс, Литва, Extra');

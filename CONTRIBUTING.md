@@ -7,19 +7,21 @@ git clone https://github.com/osmawx/sing-vpn-extension.git
 cd sing-vpn-extension
 ```
 
-Load `extension/` unpacked in `chrome://extensions` (Developer mode). The optional local-sing mode also needs [sing](https://github.com/osmawx/sing) and `./host/install.sh`.
+Run `npm ci && npm run build`, then load `build/` unpacked in `chrome://extensions` (Developer mode). Edit extension files in `src/extension/` and native host files in `src/host/`. Commit generated `build/` files with each extension change. For the optional local-sing mode, run `./install.sh`; it builds the extension, installs missing local requirements and registers the native host.
 
 ## Checks
 
 ```bash
-node --test tests/proxy-links.test.mjs
+npm ci
+npm run build
+npm test
 python3 -m unittest discover -s tests -p "test_sing_host.py"
-shellcheck host/install.sh
+shellcheck install.sh
 ```
 
 ## Rules
 
-- No build step and no runtime dependencies: plain ES modules in the extension, Python standard library only in `host/`.
+- No extension runtime dependencies: `npm run build` minifies JavaScript, CSS and HTML from `src/extension/` into `build/`; Python uses the standard library only in `src/host/`.
 - Parsing and validation changes need tests with fake hosts and credentials only.
 - Every function gets a comment; keep names descriptive.
 - One change per pull request. Never commit `extension-key.pem`, subscription URLs, proxy links or real credentials.

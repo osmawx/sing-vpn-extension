@@ -4,7 +4,7 @@
 
 ## Checklist
 
-- [ ] `node --test tests/proxy-links.test.mjs`
+- [ ] `npm ci && npm run build && npm test`
 - [ ] `python3 -m unittest discover -s tests -p "test_sing_host.py"`
-- [ ] `shellcheck host/install.sh`
+- [ ] `shellcheck install.sh`
 - [ ] No real links, credentials or `extension-key.pem` in the diff
