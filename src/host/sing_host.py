@@ -2,7 +2,7 @@
 """Native messaging host: мост между расширением Sing VPN и локальным CLI `sing`.
 
 Chrome запускает скрипт на каждое сообщение: один JSON в stdin, один JSON в stdout.
-Действия: ping, list, connect (выбрать сервер и убедиться, что sing-box запущен), status.
+Действия: ping, list, connect, status, latency, exceptions_get, exceptions_set, update.
 Протокол: 4 байта длины (native byte order) + UTF-8 JSON.
 """
 
@@ -24,6 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlencode, urlsplit
 
 HOME = os.path.expanduser("~")
+REPOSITORY_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 SING_BIN = os.path.join(HOME, ".local", "bin", "sing")
 SING_BOX_BINARIES = ("/opt/homebrew/bin/sing-box", "/usr/local/bin/sing-box")
 CONFIG_DIR = os.path.join(HOME, ".config", "sing-box")
@@ -52,6 +53,8 @@ PORT_WAIT_ATTEMPTS = 50
 PORT_WAIT_INTERVAL_SECONDS = 0.1
 MAX_MESSAGE_BYTES = 1024 * 1024
 MAX_NAME_LENGTH = 200
+UPDATE_GIT_TIMEOUT_SECONDS = 120
+UPDATE_BUILD_TIMEOUT_SECONDS = 180
 # Имена, которые `sing select` воспринимает как подкоманды, а не как сервер
 RESERVED_NAMES = frozenset({"add", "rm", "remove"})
 GROUP_HEADERS = {"— свои:": "custom", "— подписка:": "subscription"}
@@ -432,6 +435,52 @@ def handle_ping(_message):
     return {"singInstalled": os.access(SING_BIN, os.X_OK)}
 
 
+def run_update_command(arguments, timeout_seconds):
+    """Запускает фиксированную команду обновления в checkout без shell и вывода секретов."""
+    environment = child_environment()
+    environment["GIT_TERMINAL_PROMPT"] = "0"
+    try:
+        return subprocess.run(
+            arguments, cwd=REPOSITORY_DIR, env=environment, shell=False,
+            stdin=subprocess.DEVNULL, capture_output=True, text=True,
+            timeout=timeout_seconds, check=False,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError("update timed out") from error
+
+
+def handle_update(_message):
+    """Получает fast-forward текущей ветки и пересобирает расширение."""
+    if not os.path.exists(os.path.join(REPOSITORY_DIR, ".git")):
+        raise RuntimeError("update requires a Git checkout")
+
+    status = run_update_command(["git", "status", "--porcelain"], UPDATE_GIT_TIMEOUT_SECONDS)
+    if status.returncode != 0:
+        raise RuntimeError("cannot inspect Git checkout")
+    if status.stdout.strip():
+        raise RuntimeError("local changes prevent update")
+
+    current_revision = run_update_command(["git", "rev-parse", "HEAD"], UPDATE_GIT_TIMEOUT_SECONDS)
+    if current_revision.returncode != 0:
+        raise RuntimeError("cannot read current revision")
+
+    pulled = run_update_command(["git", "pull", "--ff-only"], UPDATE_GIT_TIMEOUT_SECONDS)
+    if pulled.returncode != 0:
+        raise RuntimeError("git pull failed; check branch and upstream")
+
+    installed = run_update_command(["npm", "ci", "--no-audit", "--no-fund"], UPDATE_BUILD_TIMEOUT_SECONDS)
+    if installed.returncode != 0:
+        raise RuntimeError("npm ci failed; run ./install.sh")
+    built = run_update_command(["npm", "run", "build"], UPDATE_BUILD_TIMEOUT_SECONDS)
+    if built.returncode != 0:
+        raise RuntimeError("build failed; run ./install.sh")
+
+    new_revision = run_update_command(["git", "rev-parse", "HEAD"], UPDATE_GIT_TIMEOUT_SECONDS)
+    if new_revision.returncode != 0:
+        raise RuntimeError("cannot read updated revision")
+    return {"updated": current_revision.stdout.strip() != new_revision.stdout.strip()}
+
+
 # Действия, которым нужен установленный `sing`; без него расширение работает в режиме «только браузер»
 ACTIONS_NEEDING_SING = {"list", "connect", "latency", "exceptions_get", "exceptions_set"}
 
@@ -443,6 +492,7 @@ ACTION_HANDLERS = {
     "exceptions_get": handle_exceptions_get,
     "exceptions_set": handle_exceptions_set,
     "ping": handle_ping,
+    "update": handle_update,
 }
 
 

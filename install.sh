@@ -78,18 +78,18 @@ host_command_exists() {
 # Ставит Node.js с npm, если их нет или версия Node.js не поддерживает сборку.
 ensure_node() {
   local node_version=""
-  if command -v node >/dev/null 2>&1; then
-    node_version="$(node --version 2>/dev/null || true)"
+  if host_command_exists node; then
+    node_version="$(PATH="$HOST_PATH" node --version 2>/dev/null || true)"
   fi
-  if [[ "$node_version" =~ ^v?([0-9]+) ]] && (( BASH_REMATCH[1] >= 18 )) && command -v npm >/dev/null 2>&1; then
+  if [[ "$node_version" =~ ^v?([0-9]+) ]] && (( BASH_REMATCH[1] >= 18 )) && host_command_exists npm; then
     return
   fi
   ensure_homebrew
   "$BREW_BIN" install node
   PATH="$(dirname "$BREW_BIN"):$PATH"
   export PATH
-  node_version="$(node --version 2>/dev/null || true)"
-  if [[ ! "$node_version" =~ ^v?([0-9]+) ]] || (( BASH_REMATCH[1] < 18 )) || ! command -v npm >/dev/null 2>&1; then
+  node_version="$(PATH="$HOST_PATH" node --version 2>/dev/null || true)"
+  if [[ ! "$node_version" =~ ^v?([0-9]+) ]] || (( BASH_REMATCH[1] < 18 )) || ! host_command_exists npm; then
     echo "sing-vpn: после установки не найдены Node.js >= 18 и npm" >&2
     return 1
   fi

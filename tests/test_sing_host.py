@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "host"))
 
@@ -104,6 +105,7 @@ class SingMissingTest(unittest.TestCase):
             sing_host.SING_BIN = original
 
     def test_ping_still_works_without_sing(self):
+        """Ping остаётся доступен без установленного sing."""
         original = sing_host.SING_BIN
         sing_host.SING_BIN = "/nonexistent/sing"
         try:
@@ -111,6 +113,92 @@ class SingMissingTest(unittest.TestCase):
         finally:
             sing_host.SING_BIN = original
 
+
+class UpdateTest(unittest.TestCase):
+    """Проверки обновления checkout без сетевых команд и изменения файлов пользователя."""
+
+    def setUp(self):
+        """Создаёт изолированный checkout для обновления."""
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        self.repository = Path(self.temporary_directory.name)
+        (self.repository / ".git").mkdir()
+        repository_patch = patch.object(sing_host, "REPOSITORY_DIR", str(self.repository))
+        repository_patch.start()
+        self.addCleanup(repository_patch.stop)
+
+    def test_rejects_local_changes_before_pull(self):
+        """Локальные изменения запрещают получение и сборку обновления."""
+        with patch.object(sing_host.subprocess, "run", return_value=subprocess.CompletedProcess(
+                [], 0, stdout=" M src/extension/popup.js\n", stderr="")) as run_command:
+            response = sing_host.dispatch({"action": "update"})
+
+        self.assertEqual(response, {"ok": False, "error": "local changes prevent update"})
+        self.assertEqual(run_command.call_count, 1)
+
+    def test_requires_git_checkout(self):
+        """Обновление не запускает команды вне Git checkout."""
+        (self.repository / ".git").rmdir()
+        with patch.object(sing_host.subprocess, "run") as run_command:
+            response = sing_host.dispatch({"action": "update"})
+
+        self.assertEqual(response, {"ok": False, "error": "update requires a Git checkout"})
+        run_command.assert_not_called()
+
+    def test_pulls_and_builds_before_reporting_update(self):
+        """Чистый checkout получает fast-forward и заново собирает расширение."""
+        results = [
+            subprocess.CompletedProcess([], 0, stdout="", stderr=""),
+            subprocess.CompletedProcess([], 0, stdout="old\n", stderr=""),
+            subprocess.CompletedProcess([], 0, stdout="", stderr=""),
+            subprocess.CompletedProcess([], 0, stdout="", stderr=""),
+            subprocess.CompletedProcess([], 0, stdout="", stderr=""),
+            subprocess.CompletedProcess([], 0, stdout="new\n", stderr=""),
+        ]
+        with patch.object(sing_host.subprocess, "run", side_effect=results) as run_command:
+            response = sing_host.dispatch({"action": "update"})
+
+        self.assertEqual(response, {"ok": True, "updated": True})
+        commands = [call.args[0] for call in run_command.call_args_list]
+        self.assertEqual(commands, [
+            ["git", "status", "--porcelain"],
+            ["git", "rev-parse", "HEAD"],
+            ["git", "pull", "--ff-only"],
+            ["npm", "ci", "--no-audit", "--no-fund"],
+            ["npm", "run", "build"],
+            ["git", "rev-parse", "HEAD"],
+        ])
+        self.assertTrue(all(call.kwargs["cwd"] == str(self.repository) for call in run_command.call_args_list))
+        self.assertTrue(all(call.kwargs["shell"] is False for call in run_command.call_args_list))
+
+    def test_pull_failure_stops_before_build(self):
+        """Ошибка Git не запускает npm и возвращает безопасное сообщение."""
+        results = [
+            subprocess.CompletedProcess([], 0, stdout="", stderr=""),
+            subprocess.CompletedProcess([], 0, stdout="old\n", stderr=""),
+            subprocess.CompletedProcess([], 1, stdout="", stderr="secret remote URL"),
+        ]
+        with patch.object(sing_host.subprocess, "run", side_effect=results) as run_command:
+            response = sing_host.dispatch({"action": "update"})
+
+        self.assertEqual(response, {"ok": False, "error": "git pull failed; check branch and upstream"})
+        self.assertEqual(run_command.call_count, 3)
+        self.assertNotIn("secret remote URL", str(response))
+
+    def test_npm_failure_stops_before_build(self):
+        """Ошибка npm не возвращает успешное обновление и не запускает сборку."""
+        results = [
+            subprocess.CompletedProcess([], 0, stdout="", stderr=""),
+            subprocess.CompletedProcess([], 0, stdout="old\n", stderr=""),
+            subprocess.CompletedProcess([], 0, stdout="", stderr=""),
+            subprocess.CompletedProcess([], 1, stdout="", stderr="secret token"),
+        ]
+        with patch.object(sing_host.subprocess, "run", side_effect=results) as run_command:
+            response = sing_host.dispatch({"action": "update"})
+
+        self.assertEqual(response, {"ok": False, "error": "npm ci failed; run ./install.sh"})
+        self.assertEqual(run_command.call_count, 4)
+        self.assertNotIn("secret token", str(response))
 
 class InstallerTest(unittest.TestCase):
     """Проверки установки native host без изменений домашнего каталога пользователя."""

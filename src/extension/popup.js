@@ -500,6 +500,32 @@ elements['forget-all'].addEventListener('click', async () => {
   await refreshIpInfo();
 });
 
+/** Получает обновление через native host и перезапускает расширение после сборки. */
+async function updateExtension() {
+  const button = elements['update-extension'];
+  const message = elements['update-message'];
+  button.disabled = true;
+  message.hidden = false;
+  message.className = 'hint muted';
+  message.textContent = 'Checking for updates…';
+  const result = await send({ type: 'updateExtension' });
+  if (!result.ok) {
+    message.className = 'error';
+    message.textContent = result.hostMissing ? 'Run ./install.sh to enable updates.' : result.error;
+    button.disabled = false;
+    return;
+  }
+  if (!result.updated) {
+    message.textContent = 'Already up to date.';
+    button.disabled = false;
+    return;
+  }
+  message.textContent = 'Updated. Reloading…';
+  chrome.runtime.reload();
+}
+
+elements['update-extension'].addEventListener('click', updateExtension);
+
 /** Подтягивает список локального sing; без host показывает подсказку. */
 async function refreshSingList() {
   const result = await send({ type: 'refreshSing' });

@@ -49,6 +49,10 @@ npm run build
 
 The build minifies JavaScript, CSS and HTML, removes comments, and copies icons. It does not include source maps.
 
+## Update from the extension
+
+In **Account**, press **Update extension**. The native host checks that the Git checkout has no local changes, runs `git pull --ff-only` on its current branch, then runs `npm ci` and `npm run build`. After a successful update, the extension reloads itself. The checkout needs a configured upstream branch. If Git, npm or the build fails, the button shows an error. The button needs the native host installed with `./install.sh`.
+
 ## Fastest locations
 
 Home shows the two fastest servers of your local `sing`. The host starts a temporary `sing-box` (no listening ports) with every server and measures real delay to the internet through each one (about 10 s), so the numbers include the exit, not just the entry node. WireGuard servers are not measured.
