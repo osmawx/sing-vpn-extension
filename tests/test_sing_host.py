@@ -163,7 +163,7 @@ class UpdateTest(unittest.TestCase):
         self.assertEqual(commands, [
             ["git", "status", "--porcelain"],
             ["git", "rev-parse", "HEAD"],
-            ["git", "pull", "--ff-only"],
+            ["git", "pull", "--ff-only", "origin", "main"],
             ["npm", "ci", "--no-audit", "--no-fund"],
             ["npm", "run", "build"],
             ["git", "rev-parse", "HEAD"],
@@ -181,9 +181,44 @@ class UpdateTest(unittest.TestCase):
         with patch.object(sing_host.subprocess, "run", side_effect=results) as run_command:
             response = sing_host.dispatch({"action": "update"})
 
-        self.assertEqual(response, {"ok": False, "error": "git pull failed; check branch and upstream"})
+        self.assertEqual(response, {"ok": False, "error": "git pull failed; check origin/main and network"})
         self.assertEqual(run_command.call_count, 3)
         self.assertNotIn("secret remote URL", str(response))
+
+    def test_updates_branch_without_upstream(self):
+        """Checkout без upstream может проверить origin/main без изменения локальных коммитов."""
+        remote = self.repository / "remote.git"
+        checkout = self.repository / "checkout"
+        commands = [
+            ["git", "init", "--bare", str(remote)],
+            ["git", "init", "-b", "main", str(checkout)],
+            ["git", "-C", str(checkout), "config", "user.name", "Test User"],
+            ["git", "-C", str(checkout), "config", "user.email", "test@example.invalid"],
+        ]
+        for command in commands:
+            subprocess.run(command, check=True, capture_output=True)
+        (checkout / "README.md").write_text("test repository\n")
+        for command in (
+            ["git", "-C", str(checkout), "add", "README.md"],
+            ["git", "-C", str(checkout), "commit", "-m", "test: base"],
+            ["git", "-C", str(checkout), "remote", "add", "origin", str(remote)],
+            ["git", "-C", str(checkout), "push", "-u", "origin", "main"],
+            ["git", "-C", str(checkout), "switch", "-c", "feat/local"],
+        ):
+            subprocess.run(command, check=True, capture_output=True)
+        current_run_command = sing_host.run_update_command
+
+        def run_without_npm(arguments, timeout_seconds):
+            """Пускает Git в локальный remote, npm заменяет безопасным ответом."""
+            if arguments[0] == "npm":
+                return subprocess.CompletedProcess(arguments, 0, stdout="", stderr="")
+            return current_run_command(arguments, timeout_seconds)
+
+        with patch.object(sing_host, "REPOSITORY_DIR", str(checkout)), patch.object(
+                sing_host, "run_update_command", side_effect=run_without_npm):
+            response = sing_host.dispatch({"action": "update"})
+
+        self.assertEqual(response, {"ok": True, "updated": False})
 
     def test_npm_failure_stops_before_build(self):
         """Ошибка npm не возвращает успешное обновление и не запускает сборку."""

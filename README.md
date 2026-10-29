@@ -51,7 +51,7 @@ The build minifies JavaScript, CSS and HTML, removes comments, and copies icons.
 
 ## Update from the extension
 
-In **Account**, press **Update extension**. The native host checks that the Git checkout has no local changes, runs `git pull --ff-only` on its current branch, then runs `npm ci` and `npm run build`. After a successful update, the extension reloads itself. The checkout needs a configured upstream branch. If Git, npm or the build fails, the button shows an error. The button needs the native host installed with `./install.sh`.
+In **Account**, press **Update extension**. The native host checks that the Git checkout has no local changes, runs `git pull --ff-only origin main`, then runs `npm ci` and `npm run build`. After a successful update, the extension reloads itself. The current branch does not need an upstream; Git still rejects divergent history. If Git, npm or the build fails, the button shows an error. The button needs the native host installed with `./install.sh`.
 
 ## Fastest locations
 

@@ -450,7 +450,7 @@ def run_update_command(arguments, timeout_seconds):
 
 
 def handle_update(_message):
-    """Получает fast-forward текущей ветки и пересобирает расширение."""
+    """Получает fast-forward из origin/main и пересобирает расширение."""
     if not os.path.exists(os.path.join(REPOSITORY_DIR, ".git")):
         raise RuntimeError("update requires a Git checkout")
 
@@ -464,9 +464,9 @@ def handle_update(_message):
     if current_revision.returncode != 0:
         raise RuntimeError("cannot read current revision")
 
-    pulled = run_update_command(["git", "pull", "--ff-only"], UPDATE_GIT_TIMEOUT_SECONDS)
+    pulled = run_update_command(["git", "pull", "--ff-only", "origin", "main"], UPDATE_GIT_TIMEOUT_SECONDS)
     if pulled.returncode != 0:
-        raise RuntimeError("git pull failed; check branch and upstream")
+        raise RuntimeError("git pull failed; check origin/main and network")
 
     installed = run_update_command(["npm", "ci", "--no-audit", "--no-fund"], UPDATE_BUILD_TIMEOUT_SECONDS)
     if installed.returncode != 0:
