@@ -30,7 +30,7 @@ In scope:
 - browser traffic leaving outside the chosen proxy while the extension shows it as connected;
 - credentials or subscription URLs sent anywhere except the proxy or subscription host the user chose;
 - the native messaging host executing anything other than the documented `sing` actions, or accepting messages from other extensions;
-- the update action pulling from a remote other than `origin/main`, overwriting local changes, or executing shell input;
+- the update action pulling from a repository other than `https://github.com/osmawx/sing-vpn-extension.git`, overwriting local changes, or executing shell input;
 - `install.sh` overwriting or deleting user files.
 
 Out of scope:
