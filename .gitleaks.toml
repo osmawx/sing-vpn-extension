@@ -1,0 +1,9 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Chrome extension public RSA key; not a credential or private key"
+regexTarget = "secret"
+regexes = [
+    '''^MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtdYqakL3XdGThDfCTvuDzJrqmywhUpyiijjRrn66qRP438RwoDMzNfDM0NhxwdTatTGcugMLYDWWtOmcKX0NUs1T1TTBN0HT28pRWqnLTM5ORhLZqASjgYGX7SwSQ7skh/V8zo5MXjKBVSao0e0IrWbI4Sm\+39Hv\+aC0T91jj6Z41Y5Wd9GM8j3btAnClq2rHMsEAjj111EU0WCKn0vb7pyrM3fVKTlx/sDO1WzoRKWrglGPIF58Ff3\+j7e0jCl7DVqFNOAvKBAFfjNCbujBLDbxMnhoWOAAWxjlIT6zClWDRIeQjLCWhC5f7lJqmnQOloALDteOJMEpNqX7z\+WhvQIDAQAB$''',
+]
