@@ -163,7 +163,7 @@ class UpdateTest(unittest.TestCase):
         self.assertEqual(commands, [
             ["git", "status", "--porcelain"],
             ["git", "rev-parse", "HEAD"],
-            ["git", "pull", "--ff-only", "origin", "main"],
+            ["git", "pull", "--ff-only", sing_host.UPDATE_REPOSITORY_URL, "main"],
             ["npm", "ci", "--no-audit", "--no-fund"],
             ["npm", "run", "build"],
             ["git", "rev-parse", "HEAD"],
@@ -181,7 +181,7 @@ class UpdateTest(unittest.TestCase):
         with patch.object(sing_host.subprocess, "run", side_effect=results) as run_command:
             response = sing_host.dispatch({"action": "update"})
 
-        self.assertEqual(response, {"ok": False, "error": "git pull failed; check origin/main and network"})
+        self.assertEqual(response, {"ok": False, "error": "git pull failed; check GitHub access and local history"})
         self.assertEqual(run_command.call_count, 3)
         self.assertNotIn("secret remote URL", str(response))
 
@@ -214,7 +214,8 @@ class UpdateTest(unittest.TestCase):
                 return subprocess.CompletedProcess(arguments, 0, stdout="", stderr="")
             return current_run_command(arguments, timeout_seconds)
 
-        with patch.object(sing_host, "REPOSITORY_DIR", str(checkout)), patch.object(
+        with patch.object(sing_host, "UPDATE_REPOSITORY_URL", str(remote)), patch.object(
+                sing_host, "REPOSITORY_DIR", str(checkout)), patch.object(
                 sing_host, "run_update_command", side_effect=run_without_npm):
             response = sing_host.dispatch({"action": "update"})
 

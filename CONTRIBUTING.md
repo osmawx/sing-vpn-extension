@@ -26,4 +26,4 @@ shellcheck install.sh
 - Every function gets a comment; keep names descriptive.
 - One change per pull request. Never commit `extension-key.pem`, subscription URLs, proxy links or real credentials.
 - Commit messages follow Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`, `ci:`, `chore:`).
-- Credit AI-assisted commits with the exact model name and no email address, for example `Co-Authored-By: GPT-6 Sol`. Keep Git author and committer identities unchanged.
+- Credit AI-assisted commits with the exact model name and no email address, for example `Co-Authored-By: GPT-6.1 Sol`. Keep Git author and committer identities unchanged.

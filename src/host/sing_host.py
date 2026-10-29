@@ -53,6 +53,7 @@ PORT_WAIT_ATTEMPTS = 50
 PORT_WAIT_INTERVAL_SECONDS = 0.1
 MAX_MESSAGE_BYTES = 1024 * 1024
 MAX_NAME_LENGTH = 200
+UPDATE_REPOSITORY_URL = "https://github.com/osmawx/sing-vpn-extension.git"
 UPDATE_GIT_TIMEOUT_SECONDS = 120
 UPDATE_BUILD_TIMEOUT_SECONDS = 180
 # Имена, которые `sing select` воспринимает как подкоманды, а не как сервер
@@ -450,7 +451,7 @@ def run_update_command(arguments, timeout_seconds):
 
 
 def handle_update(_message):
-    """Получает fast-forward из origin/main и пересобирает расширение."""
+    """Получает fast-forward из публичного main по HTTPS и пересобирает расширение."""
     if not os.path.exists(os.path.join(REPOSITORY_DIR, ".git")):
         raise RuntimeError("update requires a Git checkout")
 
@@ -464,9 +465,9 @@ def handle_update(_message):
     if current_revision.returncode != 0:
         raise RuntimeError("cannot read current revision")
 
-    pulled = run_update_command(["git", "pull", "--ff-only", "origin", "main"], UPDATE_GIT_TIMEOUT_SECONDS)
+    pulled = run_update_command(["git", "pull", "--ff-only", UPDATE_REPOSITORY_URL, "main"], UPDATE_GIT_TIMEOUT_SECONDS)
     if pulled.returncode != 0:
-        raise RuntimeError("git pull failed; check origin/main and network")
+        raise RuntimeError("git pull failed; check GitHub access and local history")
 
     installed = run_update_command(["npm", "ci", "--no-audit", "--no-fund"], UPDATE_BUILD_TIMEOUT_SECONDS)
     if installed.returncode != 0:
