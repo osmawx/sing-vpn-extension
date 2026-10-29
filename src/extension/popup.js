@@ -537,9 +537,9 @@ async function refreshSingList() {
     return;
   }
   if (result.hostMissing) {
-    // Режим без sing: это не ошибка, просто работают только http/https/socks5 без логина
+    // Сохранённые локации появятся, но подключение требует исправного native host.
     elements['list-note'].hidden = false;
-    elements['list-note'].textContent = 'Browser-only mode. For VLESS/WireGuard and your sing servers, run ./install.sh and reload.';
+    elements['list-note'].textContent = 'Local sing unavailable. Saved locations remain. Run ./install.sh and reopen the popup.';
     await refreshAll();
   }
 }
