@@ -9,7 +9,7 @@ import { minify as minifyJavaScript } from 'terser';
 const PROJECT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SOURCE_DIR = path.join(PROJECT_DIR, 'src', 'extension');
 const BUILD_DIR = path.join(PROJECT_DIR, 'build');
-const JAVASCRIPT_FILES = ['background.js', 'popup.js', 'proxy-links.js', 'configuration.js'];
+const JAVASCRIPT_FILES = ['background.js', 'popup.js', 'proxy-links.js', 'configuration.js', 'runtime-version.js'];
 
 /** Создаёт готовое расширение из исходных файлов. */
 async function buildExtension() {

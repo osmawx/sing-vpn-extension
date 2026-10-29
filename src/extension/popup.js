@@ -2,6 +2,7 @@
 
 import { normalizeDomain } from './proxy-links.js';
 import { MAX_CONFIGURATION_BYTES, parseConfiguration } from './configuration.js';
+import { ensureCurrentBackground } from './runtime-version.js';
 
 const FAST_SERVER_COUNT = 2;
 const HOST_NAME = 'com.singvpn.host';
@@ -641,6 +642,7 @@ async function refreshSingList() {
 }
 
 (async () => {
+  if (!await ensureCurrentBackground(send, chrome.runtime)) { return; }
   await loadState();
   elements['add-subscription'].value = state.subscriptionUrl ?? '';
   renderAll();

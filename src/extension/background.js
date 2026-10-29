@@ -330,6 +330,7 @@ async function importConfiguration(text) {
 }
 
 const MESSAGE_HANDLERS = {
+  getVersion: async () => ({ ok: true, version: chrome.runtime.getManifest().version }),
   connect: (message) => connect(message.serverId),
   disconnect: () => disconnect(),
   import: (message) => importServers(message),
