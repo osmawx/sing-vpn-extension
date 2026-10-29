@@ -314,6 +314,7 @@ const MESSAGE_HANDLERS = {
   remove: (message) => removeServer(message.serverId),
   forgetAll: () => forgetAll(),
   refreshSing: () => refreshSing(),
+  updateExtension: () => callHost({ action: 'update' }),
   addException: (message) => addException(message.domain),
   removeException: (message) => removeException(message.domain),
   setBypassRu: (message) => setBypassRu(message.enabled),

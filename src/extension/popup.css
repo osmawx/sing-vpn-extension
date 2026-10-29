@@ -115,6 +115,8 @@ h1 { font-size: 22px; font-weight: 700; }
 }
 .primary { padding: 10px; font-weight: 600; background: var(--accent-strong); border-radius: 12px; }
 .danger-link { margin-top: 18px; color: var(--danger); font-size: 14px; }
+.update-button { width: 100%; margin-top: 22px; }
+.update-button:disabled { opacity: .6; cursor: wait; }
 .locations-head h1 { flex: 1; }
 .locations-head input { width: 120px; }
 .location-list .remove { color: var(--muted); padding: 4px 8px; }
