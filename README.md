@@ -1,11 +1,11 @@
 # Sing VPN (browser extension)
 
-Chrome MV3 extension with a Blanc-style popup (Home / Locations / Account). It connects **inside the browser** through your own proxies, with no helper app and no native host.
+Chrome MV3 extension with a Blanc-style popup (Home / Locations / Account). It connects **inside the browser** through your own proxies. Local sing integration uses an optional native host.
 
 ## Install
 
 1. Open `chrome://extensions`, enable **Developer mode**.
-2. **Load unpacked** and pick the `extension/` folder.
+2. **Load unpacked** and pick the `build/` folder.
 3. Open the popup, go to **Locations**, press **+**, paste proxy links and/or a subscription URL, press **Add**.
 4. Pick a location, or press the power button to connect to the last used one.
 
@@ -25,18 +25,29 @@ Name format `🇱🇹 Vilnius, Lithuania, Extra` gives the flag, city and countr
 ## Two modes
 
 - **Browser-only** (default, nothing to install): http/https/socks5 servers, site exceptions, `.ru` bypass. Nothing outside the browser is touched.
-- **With sing** (optional): `./host/install.sh` plus `~/.local/bin/sing`. Adds VLESS/WireGuard and the rest of your `sing` servers. Without the host, or with the host but no `sing`, the popup stays in browser-only mode and hides sing sections; if you were connected through sing, it disconnects.
+- **With sing** (optional): run `./install.sh` once. It installs the local requirements and adds VLESS/WireGuard and the rest of your `sing` servers. Without the host, the popup stays in browser-only mode and hides sing sections; if you were connected through sing, it disconnects.
 
 ## Local sing (all servers from `sing select`)
 
 The popup lists every server from your local `sing` (custom + subscription) and switches them: picking one runs `sing select <name>`, starts `sing-box` if needed and points the browser at `127.0.0.1:1080`. Browsers cannot run commands, so this needs a native messaging host:
 
 ```bash
-./host/install.sh            # register for Chrome/Chromium/Brave
-./host/install.sh uninstall
+./install.sh            # install requirements and register for Chrome/Chromium/Brave
+./install.sh uninstall
 ```
 
-Then reload the extension. Requires `~/.local/bin/sing` and Python 3. VLESS/WireGuard servers work this way.
+The install command checks Node.js 18+, npm, Python 3, `sing-box`, `proxychains4`, and `nc`. It installs missing packages with Homebrew, installing Homebrew first if needed. It runs `npm ci` and builds the extension from `src/extension/` before registering the native host. It uses a neighboring `sing` checkout when available; otherwise it clones `sing` into `~/.local/share/sing-vpn/sing-source` and runs its installer. Existing `sing` files are checked before replacement. Then reload the extension. Loading `build/` unpacked in Chrome is still a browser step.
+
+## Build from source
+
+Extension source files live in `src/extension/`. The native host lives in `src/host/`. The checked-in `build/` directory contains the extension to load in Chrome. `./install.sh` regenerates it. To build only the extension after changes:
+
+```bash
+npm ci
+npm run build
+```
+
+The build minifies JavaScript, CSS and HTML, removes comments, and copies icons. It does not include source maps.
 
 ## Fastest locations
 
@@ -57,6 +68,8 @@ See [SECURITY.md](SECURITY.md) and [PRIVACY.md](PRIVACY.md). Licensed under [MIT
 ## Tests
 
 ```bash
-node --test tests/proxy-links.test.mjs
+npm ci
+npm run build
+npm test
 python3 -m unittest discover -s tests -p "test_sing_host.py"
 ```

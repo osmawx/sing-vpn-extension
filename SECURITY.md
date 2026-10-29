@@ -13,7 +13,7 @@ Report privately through GitHub: **Security → Report a vulnerability** on this
 
 Include:
 
-- what is affected (`extension/`, `host/sing_host.py`, `host/install.sh`);
+- what is affected (`src/extension/`, `src/host/sing_host.py`, `build/`, `install.sh`);
 - steps to reproduce, with **fake** links and credentials only;
 - the impact you expect (traffic leak outside the proxy, credential exposure, code execution, and so on).
 
@@ -30,7 +30,7 @@ In scope:
 - browser traffic leaving outside the chosen proxy while the extension shows it as connected;
 - credentials or subscription URLs sent anywhere except the proxy or subscription host the user chose;
 - the native messaging host executing anything other than the documented `sing` actions, or accepting messages from other extensions;
-- `host/install.sh` overwriting or deleting user files.
+- `install.sh` overwriting or deleting user files.
 
 Out of scope:
 
