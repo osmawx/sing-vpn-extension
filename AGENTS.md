@@ -15,10 +15,10 @@
 
 ## Project constraints
 
-- Keep the extension as plain ES modules without a build step or runtime dependencies.
-- Keep `host/sing_host.py` compatible with the system `python3` and the standard library only.
-- Use fake hosts, links, and credentials in tests. Add parser and validation cases to `tests/proxy-links.test.mjs`; add native host cases to `tests/test_sing_host.py`.
-- Keep `host/install.sh` safe for existing user files. Verify install and uninstall behavior when changing it.
+- Keep extension runtime code as plain ES modules; build from src/extension into build with JavaScript-only minifiers.
+- Keep `src/host/sing_host.py` compatible with the system `python3` and the standard library only.
+- Use fake hosts, links, and credentials in tests. Add parser and validation cases to `tests/proxy-links.test.mjs`; add native host cases to `tests/test_*.py`.
+- Keep `install.sh` safe for existing user files. Verify install and uninstall behavior when changing it.
 - Do not bypass checks or commit with `--no-verify`.
 
 ## Git
