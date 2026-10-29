@@ -116,16 +116,9 @@ function singLocationToServer(location, subscriptionLabel) {
   };
 }
 
-/**
- * Режим без sing: убирает кеш серверов sing и, если браузер был направлен
- * на локальный sing, возвращает прямое соединение (порт больше никто не слушает).
- */
-async function dropSingServers() {
-  const { singServers = [], connectedId = null } = await chrome.storage.local.get(['singServers', 'connectedId']);
-  if (singServers.length === 0 && !String(connectedId).startsWith('sing:')) {
-    return;
-  }
-  await chrome.storage.local.set({ singServers: [] });
+/** Отключает недоступный sing, сохраняя кеш локаций до восстановления host. */
+async function disconnectFromMissingSingHost() {
+  const { connectedId = null } = await chrome.storage.local.get(['connectedId']);
   if (String(connectedId).startsWith('sing:')) {
     await disconnect();
   }
@@ -136,7 +129,7 @@ async function refreshSing() {
   const result = await callHost({ action: 'list' });
   if (!result.ok) {
     if (result.hostMissing) {
-      await dropSingServers();
+      await disconnectFromMissingSingHost();
     }
     return result;
   }
