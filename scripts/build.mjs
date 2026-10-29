@@ -2,8 +2,9 @@ import { cp, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { transform } from 'esbuild';
-import { minify } from 'html-minifier-terser';
+import CleanCSS from 'clean-css';
+import { minify as minifyHtml } from 'html-minifier-terser';
+import { minify as minifyJavaScript } from 'terser';
 
 const PROJECT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SOURCE_DIR = path.join(PROJECT_DIR, 'src', 'extension');
@@ -18,27 +19,23 @@ async function buildExtension() {
 
     for (const filename of JAVASCRIPT_FILES) {
       const source = await readFile(path.join(SOURCE_DIR, filename), 'utf8');
-      const result = await transform(source, {
-        loader: 'js',
-        format: 'esm',
-        minify: true,
-        legalComments: 'none',
-        target: 'chrome108',
+      const result = await minifyJavaScript(source, {
+        module: true,
+        ecma: 2022,
+        format: { comments: false },
       });
-      await writeFile(path.join(stagingDirectory, filename), result.code);
+      await writeFile(path.join(stagingDirectory, filename), `${result.code}\n`);
     }
 
     const stylesheet = await readFile(path.join(SOURCE_DIR, 'popup.css'), 'utf8');
-    const minifiedStylesheet = await transform(stylesheet, {
-      loader: 'css',
-      minify: true,
-      legalComments: 'none',
-      target: 'chrome108',
-    });
-    await writeFile(path.join(stagingDirectory, 'popup.css'), minifiedStylesheet.code);
+    const minifiedStylesheet = new CleanCSS({ level: { 1: { specialComments: 0 } } }).minify(stylesheet);
+    if (minifiedStylesheet.errors.length) {
+      throw new Error(minifiedStylesheet.errors.join('\n'));
+    }
+    await writeFile(path.join(stagingDirectory, 'popup.css'), `${minifiedStylesheet.styles}\n`);
 
     const markup = await readFile(path.join(SOURCE_DIR, 'popup.html'), 'utf8');
-    const minifiedMarkup = await minify(markup, {
+    const minifiedMarkup = await minifyHtml(markup, {
       collapseWhitespace: true,
       removeComments: true,
       removeRedundantAttributes: true,

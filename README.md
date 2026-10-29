@@ -47,7 +47,7 @@ npm ci
 npm run build
 ```
 
-The build minifies JavaScript, CSS and HTML, removes comments, and copies icons. It does not include source maps.
+The build minifies JavaScript, CSS and HTML, removes comments, and copies icons. It uses JavaScript minifiers without native executables and does not include source maps.
 
 ## Update from the extension
 
