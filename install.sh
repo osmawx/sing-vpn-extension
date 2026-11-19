@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Регистрирует native messaging host для расширения Sing VPN (Chrome/Chromium/Brave, macOS).
+# Регистрирует native messaging host для расширения Sing VPN (Chrome/Chromium/Brave/Aside, macOS).
 # Использование: ./install.sh [uninstall]
 set -euo pipefail
 
@@ -17,6 +17,7 @@ HOST_PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$HOME/
 BROWSER_DIRS=(
   "$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts"
   "$HOME/Library/Application Support/Chromium/NativeMessagingHosts"
+  "$HOME/Library/Application Support/Aside/NativeMessagingHosts"
   "$HOME/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts"
 )
 
