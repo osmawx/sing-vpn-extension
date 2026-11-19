@@ -16,7 +16,7 @@ npm ci
 npm run build
 npm test
 python3 -m unittest discover -s tests -p "test_*.py"
-shellcheck install.sh "src/installer/Install Sing.command"
+shellcheck install.sh "src/installer/Install Sing.command" src/host/homebrew_tools.sh
 ```
 
 ## Rules

@@ -93,7 +93,11 @@
         </header>
         <div id="install-sing-panel" class="card add-panel">
           <button id="install-sing" class="primary" type="button">Install local sing</button>
-          <p id="install-sing-message" class="hint muted" role="status">Install or repair local sing: download and open the macOS installer.</p>
+          <p id="install-sing-message" class="hint muted" role="status">Install or repair local sing: copy the installation command and run it in Terminal.</p>
+          <details id="install-command-panel" hidden>
+            <summary>Installation command</summary>
+            <textarea id="sing-install-command" rows="5" readonly spellcheck="false" aria-label="Installation command for Terminal"></textarea>
+          </details>
           <button id="check-sing-installation" class="secondary" type="button">Check installation</button>
         </div>
         <h2 class="subheading">Local versions</h2>

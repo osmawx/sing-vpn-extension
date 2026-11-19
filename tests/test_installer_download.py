@@ -4,6 +4,7 @@ import hashlib
 import gzip
 import io
 import os
+import shlex
 import subprocess
 import tarfile
 import tempfile
@@ -29,7 +30,7 @@ class DownloadableInstallerTest(unittest.TestCase):
             self.assertEqual(archive.extractfile(member).read(),
                              (PROJECT_DIR / 'src/installer/Install Sing.command').read_bytes())
 
-    def run_launcher(self, fail_download=False, bad_checksum=False):
+    def run_launcher(self, fail_download=False, bad_checksum=False, copied_command=False):
         """Run a launcher with fake curl, HOME and installation script."""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -60,8 +61,13 @@ fi
             sentinel = root / '.config/sing-box/custom.txt'
             sentinel.parent.mkdir(parents=True)
             sentinel.write_text('fake credentials')
+            arguments = (shlex.split((PROJECT_DIR / 'build/install-command.txt').read_text()) if copied_command
+                         else ['bash', str(PROJECT_DIR / 'src/installer/Install Sing.command')])
+            if copied_command:
+                self.assertEqual(arguments, ['/bin/bash', '-c',
+                                 (PROJECT_DIR / 'src/installer/Install Sing.command').read_text()])
             result = subprocess.run(
-                ['bash', str(PROJECT_DIR / 'src/installer/Install Sing.command')],
+                arguments,
                 env={**os.environ, 'HOME': directory, 'PATH': f'{commands}:/usr/bin:/bin',
                      'FAIL_DOWNLOAD': '1' if fail_download else '0', 'FAKE_ARCHIVE': str(archive_path),
                      'FAKE_CHECKSUM': '0' * 64 if bad_checksum else hashlib.sha256(archive_path.read_bytes()).hexdigest()},
@@ -90,3 +96,15 @@ fi
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(installed)
         self.assertIn('Installation failed', result.stdout)
+
+    def test_copied_terminal_command_installs_without_opening_downloaded_executable(self):
+        """The generated shell quoting preserves the full trusted installer payload."""
+        result, installed = self.run_launcher(copied_command=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(installed)
+
+    def test_copied_command_still_rejects_unverified_release(self):
+        """Clipboard delivery must retain the release checksum gate."""
+        result, installed = self.run_launcher(copied_command=True, bad_checksum=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(installed)

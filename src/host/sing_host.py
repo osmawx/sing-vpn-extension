@@ -766,7 +766,8 @@ def handle_update_sing(_message):
 def handle_update_sing_box(_message):
     """Ask Terminal to run the fixed upgrade command without an executable launcher file."""
     brew = find_brew()
-    upgrade_command = (shlex.quote(brew) + " upgrade sing-box; "
+    helper = os.path.join(os.path.dirname(__file__), "homebrew_tools.sh")
+    upgrade_command = ("/bin/bash " + shlex.quote(helper) + " " + shlex.quote(brew) + " upgrade sing-box; "
                        "update_status=$?; "
                        "if [ \"$update_status\" -eq 0 ]; then "
                        "echo 'sing-box updated. Reconnect local sing in the extension.'; "

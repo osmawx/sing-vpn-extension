@@ -74,6 +74,11 @@ host_command_exists() {
   PATH="$HOST_PATH" command -v "$1" >/dev/null 2>&1
 }
 
+# Repair the known quarantined Ruby cache before installing Homebrew dependencies.
+run_homebrew() {
+  /bin/bash "$REPO_DIR/src/host/homebrew_tools.sh" "$BREW_BIN" "$@"
+}
+
 # Ставит Node.js с npm, если их нет или версия Node.js не поддерживает сборку.
 ensure_node() {
   local node_version=""
@@ -84,7 +89,7 @@ ensure_node() {
     return
   fi
   ensure_homebrew
-  "$BREW_BIN" install node
+  run_homebrew install node
   PATH="$(dirname "$BREW_BIN"):$PATH"
   export PATH
   node_version="$(PATH="$HOST_PATH" node --version 2>/dev/null || true)"
@@ -122,7 +127,7 @@ ensure_dependencies() {
   host_command_exists nc || missing_formulas+=(netcat)
   if ((${#missing_formulas[@]})); then
     ensure_homebrew
-    "$BREW_BIN" install "${missing_formulas[@]}"
+    run_homebrew install "${missing_formulas[@]}"
     PATH="$(dirname "$BREW_BIN"):$PATH"
     export PATH
   fi

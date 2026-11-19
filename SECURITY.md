@@ -39,3 +39,5 @@ Out of scope:
 - a malicious proxy server the user added on purpose.
 
 Release downloads use HTTPS and SHA-256 checksums from the official release. Checksums detect corrupted downloads; they do not replace trust in the repository maintainers and GitHub account. Runtime updates keep a previous-package backup and never contain subscription URLs, generated proxy configurations or credentials.
+
+The installer is delivered as a user-copied Terminal command, not a Finder-opened executable. Homebrew cache repair is limited to its exact current portable Ruby archive, requires matching vendor SHA-256 metadata, rejects archive symlinks and preserves the old archive as a unique backup before Homebrew downloads again. It never recursively removes quarantine or changes Gatekeeper settings.

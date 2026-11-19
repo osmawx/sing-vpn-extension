@@ -21,8 +21,9 @@ REPOSITORIES = {'extension': 'sing-vpn-extension', 'sing': 'sing'}
 ASSETS = {'extension': 'sing-vpn-macos.tar.gz', 'sing': 'sing-macos.tar.gz'}
 REQUIRED = {
     'extension': {'build/manifest.json', 'build/background.js', 'build/popup.js',
-                  'build/popup.html', 'build/popup.css', 'build/release-info.json', 'src/host/sing_host.py',
-                  'src/host/release_tools.py', 'install.sh'},
+                  'build/popup.html', 'build/popup.css', 'build/release-info.json', 'build/install-command.txt',
+                  'src/host/sing_host.py',
+                  'src/host/release_tools.py', 'src/host/homebrew_tools.sh', 'install.sh'},
     'sing': {'bin/sing', 'share/select.py', 'proxychains/sing.conf', 'VERSION'},
 }
 MAX_ARCHIVE_BYTES = 32 * 1024 * 1024
