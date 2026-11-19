@@ -306,6 +306,7 @@ class InstallerTest(unittest.TestCase):
         self.make_script(self.repo / "install.sh", installer_text)
         (self.repo / "src/host/sing_host.py").write_text("# test host\n")
         shutil.copyfile(source.parent / "src/host/release_tools.py", self.repo / "src/host/release_tools.py")
+        shutil.copyfile(source.parent / "src/host/homebrew_tools.sh", self.repo / "src/host/homebrew_tools.sh")
         self.make_script(self.fake_bin / "node", "#!/bin/sh\necho v20.0.0\n")
         self.make_script(self.fake_bin / "npm", """#!/bin/bash
 printf '%s\n' "$*" >> "$BUILD_LOG"

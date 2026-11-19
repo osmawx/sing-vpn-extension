@@ -759,13 +759,28 @@ async function refreshSingList() {
   return result;
 }
 
-/** Downloads an executable macOS installer archive without needing a native host. */
-function downloadSingInstaller() {
-  const download = document.createElement('a');
-  download.href = chrome.runtime.getURL('sing-installer.tar.gz');
-  download.download = 'sing-installer.tar.gz';
-  download.click();
-  elements['install-sing-message'].textContent = 'Open sing-installer.tar.gz, then double-click Install Sing.command. After installation, click Check installation.';
+/** Copies the bundled, checksum-verifying installer as a command to paste in Terminal. */
+async function copySingInstallCommand() {
+  const message = elements['install-sing-message'];
+  elements['install-sing'].disabled = true;
+  try {
+    const response = await fetch(chrome.runtime.getURL('install-command.txt'));
+    if (!response.ok) { throw new Error('Installer command unavailable'); }
+    const command = await response.text();
+    elements['sing-install-command'].value = command;
+    elements['install-command-panel'].hidden = false;
+    try {
+      await navigator.clipboard.writeText(command);
+      message.textContent = 'Installation command copied. Paste it in Terminal and press Return. After installation, click Check installation.';
+    } catch {
+      elements['install-command-panel'].open = true;
+      message.textContent = 'Copy the command below, paste it in Terminal and press Return. After installation, click Check installation.';
+    }
+  } catch {
+    message.textContent = 'Could not prepare the installer command. Reopen the extension and try again.';
+  } finally {
+    elements['install-sing'].disabled = false;
+  }
 }
 
 /** Rechecks the native host after installation and refreshes locations. */
@@ -787,7 +802,7 @@ async function checkSingInstallation() {
   }
 }
 
-elements['install-sing'].addEventListener('click', downloadSingInstaller);
+elements['install-sing'].addEventListener('click', copySingInstallCommand);
 elements['check-sing-installation'].addEventListener('click', checkSingInstallation);
 
 (async () => {

@@ -56,6 +56,9 @@ async function buildExtension() {
     await cp(path.join(SOURCE_DIR, 'icons'), path.join(stagingDirectory, 'icons'), { recursive: true });
     const installer = await readFile(path.join(PROJECT_DIR, 'src', 'installer', 'Install Sing.command'));
     await writeFile(path.join(stagingDirectory, 'sing-installer.tar.gz'), createInstallerArchive(installer));
+    // Shell-quote the trusted bundled script; Terminal reads it as text, never opens a downloaded executable.
+    const command = "/bin/bash -c '" + installer.toString('utf8').replaceAll("'", "'\"'\"'") + "'\n";
+    await writeFile(path.join(stagingDirectory, 'install-command.txt'), command);
 
     for (const filename of JAVASCRIPT_FILES) {
       const source = await readFile(path.join(SOURCE_DIR, filename), 'utf8');
