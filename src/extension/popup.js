@@ -2,7 +2,7 @@
 
 import { normalizeDomain } from './proxy-links.js';
 import { MAX_CONFIGURATION_BYTES, parseConfiguration } from './configuration.js';
-import { ensureCurrentBackground } from './runtime-version.js';
+import { ensureCurrentBackground, requestExtensionUpdate } from './runtime-version.js';
 
 const FAST_SERVER_COUNT = 2;
 const HOST_NAME = 'com.singvpn.host';
@@ -515,49 +515,52 @@ async function updateExtension() {
   button.disabled = true;
   message.hidden = false;
   message.className = 'hint muted';
-  message.textContent = 'Checking for updates…';
-  const request = { type: 'updateExtension', target: elements['update-target'].value || undefined, supportsTargetChoice: true };
-  let result = await send(request);
-  if (result.ok && result.loadPath) {
-    // An older host may just have installed the new updater. Retry once with that host.
-    result = await send(request);
-  }
-  if (!result.ok) {
-    message.className = 'error';
-    message.textContent = result.hostMissing ? 'Run ./install.sh to enable updates.' : result.error;
-    button.disabled = false;
-    return;
-  }
-  if (result.targetRequired) {
-    const select = elements['update-target'];
-    select.replaceChildren();
-    const placeholder = document.createElement('option');
-    placeholder.value = '';
-    placeholder.textContent = 'Choose the installed copy';
-    select.append(placeholder);
-    for (const path of result.targets) {
-      const option = document.createElement('option');
-      option.value = path;
-      option.textContent = path;
-      select.append(option);
+  message.textContent = 'Preparing and installing update…';
+  try {
+    const request = { type: 'updateExtension', target: elements['update-target'].value || undefined, supportsTargetChoice: true };
+    let result = await requestExtensionUpdate(send, request);
+    if (result.ok && result.loadPath) {
+      // An older host may just have installed the new updater. Retry once with that host.
+      result = await requestExtensionUpdate(send, request);
     }
-    elements['update-target-controls'].hidden = false;
-    message.textContent = 'Multiple installed copies found. Choose this browser’s folder and press Update extension again.';
+    if (!result.ok) {
+      message.className = 'error';
+      message.textContent = result.hostMissing ? 'Run ./install.sh to enable updates.' : result.error;
+      return;
+    }
+    if (result.targetRequired) {
+      const select = elements['update-target'];
+      select.replaceChildren();
+      const placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = 'Choose the installed copy';
+      select.append(placeholder);
+      for (const path of result.targets) {
+        const option = document.createElement('option');
+        option.value = path;
+        option.textContent = path;
+        select.append(option);
+      }
+      elements['update-target-controls'].hidden = false;
+      message.textContent = 'Multiple installed copies found. Choose this browser’s folder and press Update extension again.';
+      return;
+    }
+    if (result.loadPath) {
+      message.textContent = `Release installed. Open your browser extensions page and use Load unpacked once for: ${result.loadPath}`;
+      return;
+    }
+    if (!result.updated) {
+      message.textContent = 'Already up to date.';
+      return;
+    }
+    message.textContent = 'Updated. Reloading…';
+    chrome.runtime.reload();
+  } catch (error) {
+    message.className = 'error';
+    message.textContent = error.message || 'Update failed. Reopen the extension and try again.';
+  } finally {
     button.disabled = false;
-    return;
   }
-  if (result.loadPath) {
-    message.textContent = `Release installed. Open your browser extensions page and use Load unpacked once for: ${result.loadPath}`;
-    button.disabled = false;
-    return;
-  }
-  if (!result.updated) {
-    message.textContent = 'Already up to date.';
-    button.disabled = false;
-    return;
-  }
-  message.textContent = 'Updated. Reloading…';
-  chrome.runtime.reload();
 }
 
 elements['update-extension'].addEventListener('click', updateExtension);

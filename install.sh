@@ -76,7 +76,9 @@ host_command_exists() {
 
 # Repair the known quarantined Ruby cache before installing Homebrew dependencies.
 run_homebrew() {
-  /bin/bash "$REPO_DIR/src/host/homebrew_tools.sh" "$BREW_BIN" "$@"
+  local helper="$REPO_DIR/build/homebrew-tools.sh"
+  [[ ! -f "$REPO_DIR/src/host/homebrew_tools.sh" ]] || helper="$REPO_DIR/src/host/homebrew_tools.sh"
+  /bin/bash "$helper" "$BREW_BIN" "$@"
 }
 
 # Ставит Node.js с npm, если их нет или версия Node.js не поддерживает сборку.

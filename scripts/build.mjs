@@ -54,6 +54,7 @@ async function buildExtension() {
   const stagingDirectory = await mkdtemp(path.join(PROJECT_DIR, '.build-'));
   try {
     await cp(path.join(SOURCE_DIR, 'icons'), path.join(stagingDirectory, 'icons'), { recursive: true });
+    await cp(path.join(PROJECT_DIR, 'src', 'host', 'homebrew_tools.sh'), path.join(stagingDirectory, 'homebrew-tools.sh'));
     const installer = await readFile(path.join(PROJECT_DIR, 'src', 'installer', 'Install Sing.command'));
     await writeFile(path.join(stagingDirectory, 'sing-installer.tar.gz'), createInstallerArchive(installer));
     // Shell-quote the trusted bundled script; Terminal reads it as text, never opens a downloaded executable.
