@@ -33,14 +33,16 @@ The popup lists every server from your local `sing` (custom + subscription) and 
 
 **Account → Settings → Install local sing** downloads `sing-installer.tar.gz`. Open the archive and double-click **Install Sing.command**. The launcher downloads a ready-built GitHub Release, verifies its SHA-256 checksum, and installs the native host and CLI without a local Git checkout or Node.js. Homebrew supplies missing Python, sing-box and proxychains dependencies and may ask for your macOS password.
 
-Load `~/.local/share/sing-vpn/runtime/build` once through the browser's **Load unpacked** button. Future updates replace that managed runtime, so the loaded extension and native host use the same installation. Existing development checkouts and proxy configuration remain intact. **Check installation** refreshes local locations after setup. Source developers can still use the command below; this developer path builds with npm.
+For a first browser installation, load `~/.local/share/sing-vpn/runtime/build` through **Load unpacked**. If Sing VPN is already loaded, use **Update extension** instead: it replaces the files in that registered folder and reloads the same extension. Proxy configuration and source files outside the extension folder remain intact. **Check installation** shows progress and the result in Settings, and refreshes local locations after setup. Source developers can still use the command below; this developer path builds with npm.
 
 ```bash
-./install.sh            # install requirements and register for Chrome/Chromium/Brave/Aside
+./install.sh            # install requirements and register installed Chromium browsers (Chrome, Dia, Arc, Edge, Aside and others)
 ./install.sh uninstall
 ```
 
 The install command checks Node.js 18+, npm, Python 3, `sing-box`, `proxychains4`, and `nc`. It installs missing packages with Homebrew, installing Homebrew first if needed. It runs `npm ci` and builds the extension from `src/extension/` before registering the native host. It uses a neighboring `sing` checkout when available; otherwise it clones `sing` into `~/.local/share/sing-vpn/sing-source` and runs its installer. Existing `sing` files are checked before replacement. Then reload the extension. Loading `build/` unpacked in Chrome is still a browser step.
+
+Native messaging registration supports installed Chromium browsers on macOS, including Dia, Arc, Chrome (stable, Beta, Dev and Canary), Edge, Brave, Aside, Vivaldi, Opera and Yandex Browser. Other brands are detected from Chromium profile metadata. Run the installer again after installing another browser. Firefox and Safari use different extension systems and are outside this package.
 
 ## Build from source
 
@@ -59,9 +61,9 @@ Account shows the installed extension version. The extension compares it with th
 
 In **Account → Settings**, **Update extension** downloads the prebuilt release and checksum, validates archive paths and file hashes, preserves the previous runtime as a unique backup, and activates the new runtime. Git and npm are not required. Modified managed code blocks an update rather than overwriting local edits. Proxy credentials and configuration are outside the runtime and are not replaced.
 
-When migrating from a source checkout, the extension shows the managed `build` path to load once. It continues showing this instruction until the browser loads the managed package. Subsequent successful updates reload the extension automatically.
+Updates find the unpacked folder registered in Chromium browsers, including Chrome, Dia, Arc, Edge, Brave, Aside, Vivaldi, Opera and Yandex Browser and replace that folder in place. The previous build is preserved in a unique sibling backup. Development source files outside `build/` and browser storage remain unchanged. If several different installed copies exist, explicitly choose the current browser's folder before updating; a saved path is never used to guess which browser copy is active. Other Chromium brands are detected from browser profile metadata within three directory levels under macOS Application Support. Custom locations outside that search retain the manual-load fallback. An older native host is retried once after it installs the new updater, so an existing source installation does not need a new Load unpacked selection.
 
-**Local versions** shows installed and available versions of the `sing` CLI and `sing-box` engine. Legacy CLI installations without version metadata show an unknown version. **Update sing** installs the standalone CLI release and preserves user settings and existing files as backups. **Update sing-box** uses Homebrew. An active engine keeps running during its update; reconnect local sing afterward to use the new binary. Installation of updates requires an explicit button click.
+**Local versions** shows installed and available versions of the `sing` CLI and `sing-box` engine. Legacy CLI installations without version metadata show an unknown version. **Update sing** installs the standalone CLI release and preserves user settings and existing files as backups. **Update sing-box** opens a private launcher in Terminal and runs Homebrew there. Complete the update in Terminal, then use **Check versions**. The extension reports that the update started; it does not claim completion before Homebrew finishes. Version checks read public Homebrew formula metadata without starting Ruby. An active engine keeps running during its update; reconnect local sing afterward to use the new binary. Installation of updates requires an explicit button click.
 
 ## Automatic releases
 

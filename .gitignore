@@ -6,3 +6,6 @@ node_modules/
 sing-vpn-*.json
 
 dist/
+
+build.backup-*/
+.sing-vpn-update-*/

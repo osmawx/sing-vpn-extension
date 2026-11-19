@@ -363,6 +363,14 @@ async function importConfiguration(text) {
   return { ok: true, backup: imported.backup };
 }
 
+/** Updates an unambiguous registered copy or the destination explicitly chosen in this popup. */
+async function updateExtension({ target, supportsTargetChoice }) {
+  return callHost({
+    action: 'update', managed: await isManagedRelease(), version: chrome.runtime.getManifest().version,
+    target, supportsTargetChoice: supportsTargetChoice === true,
+  });
+}
+
 const MESSAGE_HANDLERS = {
   getVersion: async () => ({ ok: true, version: chrome.runtime.getManifest().version }),
   connect: (message) => connect(message.serverId),
@@ -371,7 +379,7 @@ const MESSAGE_HANDLERS = {
   remove: (message) => removeServer(message.serverId),
   forgetAll: () => forgetAll(),
   refreshSing: () => refreshSing(),
-  updateExtension: async () => callHost({ action: 'update', managed: await isManagedRelease() }),
+  updateExtension: (message) => updateExtension(message),
   checkForUpdates: () => checkForUpdates(),
   componentVersions: () => callHost({ action: 'versions' }),
   updateSing: () => callHost({ action: 'update_sing' }),

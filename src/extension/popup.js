@@ -508,7 +508,7 @@ elements['forget-all'].addEventListener('click', async () => {
   await refreshIpInfo();
 });
 
-/** Получает обновление через native host и перезапускает расширение после сборки. */
+/** Installs a release into the registered folder and reloads the same extension. */
 async function updateExtension() {
   const button = elements['update-extension'];
   const message = elements['update-message'];
@@ -516,10 +516,33 @@ async function updateExtension() {
   message.hidden = false;
   message.className = 'hint muted';
   message.textContent = 'Checking for updates…';
-  const result = await send({ type: 'updateExtension' });
+  const request = { type: 'updateExtension', target: elements['update-target'].value || undefined, supportsTargetChoice: true };
+  let result = await send(request);
+  if (result.ok && result.loadPath) {
+    // An older host may just have installed the new updater. Retry once with that host.
+    result = await send(request);
+  }
   if (!result.ok) {
     message.className = 'error';
     message.textContent = result.hostMissing ? 'Run ./install.sh to enable updates.' : result.error;
+    button.disabled = false;
+    return;
+  }
+  if (result.targetRequired) {
+    const select = elements['update-target'];
+    select.replaceChildren();
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = 'Choose the installed copy';
+    select.append(placeholder);
+    for (const path of result.targets) {
+      const option = document.createElement('option');
+      option.value = path;
+      option.textContent = path;
+      select.append(option);
+    }
+    elements['update-target-controls'].hidden = false;
+    message.textContent = 'Multiple installed copies found. Choose this browser’s folder and press Update extension again.';
     button.disabled = false;
     return;
   }
@@ -574,6 +597,10 @@ async function updateLocalComponent(type) {
     const result = await send({ type });
     if (!result.ok) {
       message.textContent = result.hostMissing ? 'Install local sing first.' : result.error;
+      return;
+    }
+    if (result.started) {
+      message.textContent = 'Update opened in Terminal. Complete it there, then click Check versions. Reconnect local sing after updating.';
       return;
     }
     await refreshComponentVersions();
@@ -719,7 +746,7 @@ async function refreshSingList() {
     elements['list-note'].textContent = result.warning ? `Subscription: ${result.warning}` : '';
     await refreshAll();
     startLatencyStream();
-    return;
+    return result;
   }
   if (result.hostMissing) {
     // Сохранённые локации появятся, но подключение требует исправного native host.
@@ -727,6 +754,7 @@ async function refreshSingList() {
     elements['list-note'].textContent = 'Local sing unavailable. Saved locations remain. Open Account > Settings to install local sing.';
     await refreshAll();
   }
+  return result;
 }
 
 /** Downloads an executable macOS installer archive without needing a native host. */
@@ -741,8 +769,17 @@ function downloadSingInstaller() {
 /** Rechecks the native host after installation and refreshes locations. */
 async function checkSingInstallation() {
   elements['check-sing-installation'].disabled = true;
+  const message = elements['install-sing-message'];
+  message.textContent = 'Checking installation…';
   try {
-    await refreshSingList();
+    const result = await refreshSingList();
+    message.textContent = result.ok
+      ? `Local sing is available. Locations: ${result.count}.`
+      : (result.hostMissing
+        ? 'Local sing is unavailable in this browser. Run Install local sing, then check again.'
+        : 'Local sing did not respond. Export logs in Diagnostics and try again.');
+  } catch {
+    message.textContent = 'Installation check failed. Reopen the extension and try again.';
   } finally {
     elements['check-sing-installation'].disabled = false;
   }

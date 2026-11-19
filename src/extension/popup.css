@@ -123,6 +123,7 @@ h1 { font-size: 22px; font-weight: 700; }
 .danger-link { margin-top: 18px; color: var(--danger); font-size: 14px; }
 .update-button { width: 100%; margin-top: 22px; }
 .update-button:disabled { opacity: .6; cursor: wait; }
+#update-target { width: 100%; margin-top: 8px; padding: 10px; color: var(--text); background: var(--card); border: 1px solid var(--card-border); border-radius: 12px; }
 .configuration-actions { display: flex; gap: 10px; }
 .configuration-actions button { flex: 1; font-size: 14px; }
 .configuration-actions button:disabled { opacity: .6; cursor: wait; }
