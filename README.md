@@ -31,6 +31,10 @@ Name format `🇱🇹 Vilnius, Lithuania, Extra` gives the flag, city and countr
 
 The popup lists every server from your local `sing` (custom + subscription) and switches them: picking one runs `sing select <name>`, starts `sing-box` if needed and points the browser at `127.0.0.1:1080`. Browsers cannot run commands, so this needs a native messaging host:
 
+**Account → Settings → Install local sing** downloads `sing-installer.tar.gz`. Open the archive and double-click **Install Sing.command**. The launcher downloads a ready-built GitHub Release, verifies its SHA-256 checksum, and installs the native host and CLI without a local Git checkout or Node.js. Homebrew supplies missing Python, sing-box and proxychains dependencies and may ask for your macOS password.
+
+Load `~/.local/share/sing-vpn/runtime/build` once through the browser's **Load unpacked** button. Future updates replace that managed runtime, so the loaded extension and native host use the same installation. Existing development checkouts and proxy configuration remain intact. **Check installation** refreshes local locations after setup. Source developers can still use the command below; this developer path builds with npm.
+
 ```bash
 ./install.sh            # install requirements and register for Chrome/Chromium/Brave/Aside
 ./install.sh uninstall
@@ -51,15 +55,32 @@ The build minifies JavaScript, CSS and HTML, removes comments, and copies icons.
 
 ## Update from the extension
 
-Account shows the installed version. The extension checks for new commits when the browser starts and whenever the popup opens. An available update appears above the popup content and in Account. These checks do not install anything or change the checkout. If the local branch already contains the public main revision, no update is offered.
+Account shows the installed extension version. The extension compares it with the latest stable GitHub Release at browser startup and when the popup opens. Checks do not install anything.
+
+In **Account → Settings**, **Update extension** downloads the prebuilt release and checksum, validates archive paths and file hashes, preserves the previous runtime as a unique backup, and activates the new runtime. Git and npm are not required. Modified managed code blocks an update rather than overwriting local edits. Proxy credentials and configuration are outside the runtime and are not replaced.
+
+When migrating from a source checkout, the extension shows the managed `build` path to load once. It continues showing this instruction until the browser loads the managed package. Subsequent successful updates reload the extension automatically.
+
+**Local versions** shows installed and available versions of the `sing` CLI and `sing-box` engine. Legacy CLI installations without version metadata show an unknown version. **Update sing** installs the standalone CLI release and preserves user settings and existing files as backups. **Update sing-box** uses Homebrew. An active engine keeps running during its update; reconnect local sing afterward to use the new binary. Installation of updates requires an explicit button click.
+
+## Automatic releases
+
+After all CI jobs pass for a push to `main`, CI builds and publishes a complete release with SHA-256 checksums. Extension versions use `1.3.<CI run number>` and CLI versions use `1.0.<CI run number>`. PR runs do not publish releases. Release assets are uploaded to a draft before it becomes the latest stable release.
+
+For the first rollout, merge the standalone `sing` release workflow and wait for its release before merging this extension's release workflow: first-time installation downloads both packages.
+
+## Diagnostic logs
+
+In **Account → Settings → Diagnostics**, **Export logs** downloads a JSON report with browser connection status and the latest 128 KiB of the local `sing.log`. Known credentials, proxy/subscription URLs and common key formats are redacted. Review the file before sharing: site addresses and other diagnostic details may remain. Without the native host, the download still includes browser diagnostics. Export does not change the connection or settings.
+
+Account also has an **Exceptions** button for managing sites that open without VPN.
 
 ## Configuration backup
 
-In Account, use **Export configuration** to download a JSON backup of browser proxies, credentials, subscription URL and exceptions, together with local sing custom links, subscription URL and exceptions. The native host is required. The file is not encrypted and contains secrets; keep it private.
+In **Account → Settings**, use **Export configuration** to download a JSON backup of browser proxies, credentials, subscription URL and exceptions, together with local sing custom links, subscription URL and exceptions. The native host is required. The file is not encrypted and contains secrets; keep it private.
 
 **Import configuration** validates the file and asks for confirmation before replacing settings. It disconnects the browser, stops local sing and backs up existing sing files in a private `~/.config/sing-box/import-backup-*` directory. Imported files have permissions `0600`. A failed file write restores previous sing files. Cached locations and generated sing-box configuration are rebuilt when you select a server; active connections and the previous selection are not restored automatically. Subscription servers are fetched from the saved URL, so restoring those locations requires access to the subscription provider.
 
-In **Account**, press **Update extension**. The native host checks that the Git checkout has no local changes, runs `git pull --ff-only https://github.com/osmawx/sing-vpn-extension.git main`, then runs `npm ci` and `npm run build`. After a successful update, the extension reloads itself. HTTPS avoids SSH keys and custom SSH aliases. The current branch does not need an upstream; Git still rejects divergent history. If Git, npm or the build fails, the button shows an error. The button needs the native host installed with `./install.sh`.
 
 ## Fastest locations
 

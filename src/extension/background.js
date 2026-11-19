@@ -13,6 +13,16 @@ const OWN_CONTROL = 'controlled_by_this_extension';
 // Запросы, на которые уже отдали логин/пароль: повторный 407 значит «пароль неверный»
 const authAttemptedRequestIds = new Set();
 
+/** Identifies release packages so migration prompts persist until the managed build is loaded. */
+async function isManagedRelease() {
+  try {
+    const response = await fetch(chrome.runtime.getURL('release-info.json'));
+    return response.ok && (await response.json()).managed === true;
+  } catch {
+    return false;
+  }
+}
+
 /** Читает состояние из chrome.storage.local с значениями по умолчанию. */
 async function readState() {
   const stored = await chrome.storage.local.get({
@@ -303,7 +313,7 @@ async function syncBadge() {
 
 /** Проверяет обновления без установки и сохраняет результат для следующего popup. */
 async function checkForUpdates() {
-  const result = await callHost({ action: 'check_update' });
+  const result = await callHost({ action: 'check_update', version: chrome.runtime.getManifest().version });
   await chrome.storage.local.set({ extensionUpdate: result });
   return result;
 }
@@ -313,6 +323,30 @@ async function exportConfiguration() {
   const native = await callHost({ action: 'export_configuration' });
   if (!native.ok) { return native; }
   return { ok: true, configuration: createConfiguration(await readState(), native.configuration, chrome.runtime.getManifest().version) };
+}
+
+/** Exports diagnostic state and native logs without browser proxy credentials. */
+async function exportLogs() {
+  const stored = await readState();
+  const native = await callHost({ action: 'export_logs' });
+  return {
+    ok: true,
+    report: {
+      createdAt: new Date().toISOString(),
+      version: chrome.runtime.getManifest().version,
+      browser: {
+        connected: Boolean(stored.connectedId),
+        serverCount: stored.servers.length,
+        singServerCount: stored.singServers.length,
+        exceptionCount: stored.exceptions.length,
+        bypassRu: stored.bypassRu,
+      },
+      // Do not include raw host errors: older hosts can echo arbitrary input.
+      native: native.ok
+        ? { status: native.status, text: native.text, truncated: native.truncated }
+        : { status: native.hostMissing ? 'host-unavailable' : 'unavailable', text: '', truncated: false },
+    },
+  };
 }
 
 /** Проверяет весь файл, затем восстанавливает оба набора настроек без подключения. */
@@ -337,9 +371,13 @@ const MESSAGE_HANDLERS = {
   remove: (message) => removeServer(message.serverId),
   forgetAll: () => forgetAll(),
   refreshSing: () => refreshSing(),
-  updateExtension: () => callHost({ action: 'update' }),
+  updateExtension: async () => callHost({ action: 'update', managed: await isManagedRelease() }),
   checkForUpdates: () => checkForUpdates(),
+  componentVersions: () => callHost({ action: 'versions' }),
+  updateSing: () => callHost({ action: 'update_sing' }),
+  updateSingBox: () => callHost({ action: 'update_sing_box' }),
   exportConfiguration: () => exportConfiguration(),
+  exportLogs: () => exportLogs(),
   importConfiguration: (message) => importConfiguration(message.text),
   addException: (message) => addException(message.domain),
   removeException: (message) => removeException(message.domain),
