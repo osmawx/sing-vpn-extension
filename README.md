@@ -32,7 +32,7 @@ Name format `🇱🇹 Vilnius, Lithuania, Extra` gives the flag, city and countr
 The popup lists every server from your local `sing` (custom + subscription) and switches them: picking one runs `sing select <name>`, starts `sing-box` if needed and points the browser at `127.0.0.1:1080`. Browsers cannot run commands, so this needs a native messaging host:
 
 ```bash
-./install.sh            # install requirements and register for Chrome/Chromium/Brave
+./install.sh            # install requirements and register for Chrome/Chromium/Brave/Aside
 ./install.sh uninstall
 ```
 

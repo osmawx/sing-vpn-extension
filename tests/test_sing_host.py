@@ -370,6 +370,34 @@ printf '#!/bin/sh\\nexec "$REAL_PYTHON" "$@"\\n' > "$FAKE_BIN/python3"
         self.assertEqual(shlex.split(wrapper.read_text().splitlines()[1])[-1],
                          str(self.repo / "src/host/sing_host.py"))
 
+    def test_registers_and_uninstalls_aside_host(self):
+        """Aside получает host с тем же ID; удаление сохраняет чужие файлы."""
+        self.make_dependency_commands()
+        aside_directory = self.home / "Library/Application Support/Aside"
+        aside_directory.mkdir(parents=True)
+        unrelated_manifest = aside_directory / "NativeMessagingHosts/other.host.json"
+        unrelated_manifest.parent.mkdir()
+        unrelated_manifest.write_text("unrelated host")
+
+        result = self.run_installer()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        manifest = unrelated_manifest.parent / "com.singvpn.host.json"
+        self.assertTrue(manifest.is_file())
+        registration = json.loads(manifest.read_text())
+        self.assertEqual(registration["allowed_origins"],
+                         ["chrome-extension://plaaamdfdpajlgakeipabpddfkcaihpn/"])
+        self.assertEqual(registration["path"],
+                         str(self.home / ".local/share/sing-vpn/host.sh"))
+        self.assertEqual(manifest.stat().st_mode & 0o777, 0o600)
+        removed = subprocess.run(
+            [str(self.repo / "install.sh"), "uninstall"], env=self.environment,
+            text=True, capture_output=True, check=False, timeout=15,
+        )
+        self.assertEqual(removed.returncode, 0, removed.stderr)
+        self.assertFalse(manifest.exists())
+        self.assertEqual(unrelated_manifest.read_text(), "unrelated host")
+
     def test_reuses_installed_dependencies_and_sing(self):
         """Повторный запуск не переустанавливает готовые зависимости и sing."""
         self.make_dependency_commands()
