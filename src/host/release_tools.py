@@ -23,7 +23,7 @@ REQUIRED = {
     'extension': {'build/manifest.json', 'build/background.js', 'build/popup.js',
                   'build/popup.html', 'build/popup.css', 'build/release-info.json', 'build/install-command.txt',
                   'src/host/sing_host.py',
-                  'src/host/release_tools.py', 'src/host/homebrew_tools.sh', 'install.sh'},
+                  'src/host/release_tools.py', 'build/homebrew-tools.sh', 'install.sh'},
     'sing': {'bin/sing', 'share/select.py', 'proxychains/sing.conf', 'VERSION'},
 }
 MAX_ARCHIVE_BYTES = 32 * 1024 * 1024

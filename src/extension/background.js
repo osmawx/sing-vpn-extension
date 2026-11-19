@@ -363,12 +363,20 @@ async function importConfiguration(text) {
   return { ok: true, backup: imported.backup };
 }
 
-/** Updates an unambiguous registered copy or the destination explicitly chosen in this popup. */
+let pendingExtensionUpdate = null;
+
+/** Shares one native update transaction across repeated clicks and reopened popups. */
 async function updateExtension({ target, supportsTargetChoice }) {
-  return callHost({
+  if (pendingExtensionUpdate) { return pendingExtensionUpdate; }
+  pendingExtensionUpdate = (async () => callHost({
     action: 'update', managed: await isManagedRelease(), version: chrome.runtime.getManifest().version,
     target, supportsTargetChoice: supportsTargetChoice === true,
-  });
+  }))();
+  try {
+    return await pendingExtensionUpdate;
+  } finally {
+    pendingExtensionUpdate = null;
+  }
 }
 
 const MESSAGE_HANDLERS = {

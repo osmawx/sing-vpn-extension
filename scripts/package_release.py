@@ -17,7 +17,7 @@ def package_release(root, version, output):
     component = 'extension' if (root / 'package.json').exists() else 'sing'
     if component == 'extension':
         names = [str(path.relative_to(root)) for path in (root / 'build').rglob('*') if path.is_file()]
-        names += ['src/host/sing_host.py', 'src/host/release_tools.py', 'src/host/homebrew_tools.sh', 'install.sh']
+        names += ['src/host/sing_host.py', 'src/host/release_tools.py', 'install.sh']
         asset = 'sing-vpn-macos.tar.gz'
     else:
         names = ['bin/sing', 'share/select.py', 'proxychains/sing.conf', 'VERSION']

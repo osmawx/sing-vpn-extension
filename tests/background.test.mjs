@@ -7,6 +7,8 @@ test('temporary host failure keeps cached sing locations', async () => {
   let messageListener;
   let proxyClears = 0;
   let nativeLogs;
+  let pendingUpdateReply;
+  let updateCalls = 0;
   const startupListeners = [];
   const addListener = () => {};
 
@@ -20,6 +22,11 @@ test('temporary host failure keeps cached sing locations', async () => {
       sendNativeMessage: (_name, _message, reply) => {
         if (_message.action === 'export_logs' && nativeLogs) {
           reply(nativeLogs);
+          return;
+        }
+        if (_message.action === 'update') {
+          updateCalls += 1;
+          pendingUpdateReply = reply;
           return;
         }
         if (_message.action === 'check_update') {
@@ -72,6 +79,16 @@ test('temporary host failure keeps cached sing locations', async () => {
       messageListener({ type: 'exportLogs' }, { id: chrome.runtime.id }, resolve);
     });
     assert.equal(availableLogs.report.native.text, 'ERROR dial timeout\n');
+    const firstUpdate = new Promise((resolve) => messageListener(
+      { type: 'updateExtension' }, { id: chrome.runtime.id }, resolve));
+    const secondUpdate = new Promise((resolve) => messageListener(
+      { type: 'updateExtension' }, { id: chrome.runtime.id }, resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(updateCalls, 1, 'Repeated clicks must share the active native transaction');
+    pendingUpdateReply({ ok: true, updated: true });
+    assert.deepEqual(await firstUpdate, { ok: true, updated: true });
+    assert.deepEqual(await secondUpdate, { ok: true, updated: true });
+
     assert.equal(proxyClears, 1);
   } finally {
     delete globalThis.chrome;
