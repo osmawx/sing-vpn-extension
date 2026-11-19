@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Регистрирует native messaging host для расширения Sing VPN (Chrome/Chromium/Brave/Aside, macOS).
+# Register Sing VPN native messaging for installed Chromium browsers on macOS.
 # Использование: ./install.sh [uninstall]
 set -euo pipefail
 
@@ -14,15 +14,13 @@ SING_PROXYCHAINS_CONFIG="$HOME/.proxychains/sing.conf"
 SING_SOURCE_DIR="$SUPPORT_DIR/sing-source"
 # Совпадает с CHILD_PATH в sing_host.py: Chrome запускает host без пользовательского PATH.
 HOST_PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.local/bin"
-BROWSER_DIRS=(
-  "$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts"
-  "$HOME/Library/Application Support/Chromium/NativeMessagingHosts"
-  "$HOME/Library/Application Support/Aside/NativeMessagingHosts"
-  "$HOME/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts"
-)
-
 if [[ "${1:-}" == "uninstall" ]]; then
-  for directory in "${BROWSER_DIRS[@]}"; do
+  # Remove only our manifest, including unknown brands discovered during installation.
+  for directory in \
+    "$HOME/Library/Application Support/"*/NativeMessagingHosts \
+    "$HOME/Library/Application Support/"*/*/NativeMessagingHosts \
+    "$HOME/Library/Application Support/"*/*/*/NativeMessagingHosts; do
+    [[ -d "$directory" ]] || continue
     rm -f "${directory:?}/${HOST_NAME:?}.json"
   done
   rm -f "${WRAPPER:?}"
@@ -216,11 +214,18 @@ PYTHON_BIN="$(PATH="$HOST_PATH" command -v python3)"
 
 # Chrome запускает host с пустым окружением, поэтому фиксируем абсолютный python
 mkdir -p "$SUPPORT_DIR"
+browser_dirs_temp="$(mktemp "$SUPPORT_DIR/browser-dirs.XXXXXX")"
+if ! "$PYTHON_BIN" -I "$REPO_DIR/src/host/release_tools.py" browser-host-dirs >"$browser_dirs_temp"; then
+  rm -f "$browser_dirs_temp"
+  echo "sing-vpn: could not discover browser profiles" >&2
+  exit 1
+fi
 wrapper_temp="$(mktemp "$WRAPPER.XXXXXX")"
 printf '#!/bin/bash\nexec %q -I %q\n' "$PYTHON_BIN" "$REPO_DIR/src/host/sing_host.py" >"$wrapper_temp"
 install_generated_file "$wrapper_temp" "$WRAPPER" 755
 
-for directory in "${BROWSER_DIRS[@]}"; do
+# NUL-separated paths preserve spaces, quotes and other valid filename characters.
+while IFS= read -r -d '' directory; do
   # Только для установленных браузеров
   [[ -d "$(dirname "$directory")" ]] || continue
   mkdir -p "$directory"
@@ -241,4 +246,5 @@ sys.stdout.write("\n")
 PYTHON
   install_generated_file "$manifest_temp" "$directory/$HOST_NAME.json" 600
   echo "sing-vpn: host зарегистрирован в $directory"
-done
+done <"$browser_dirs_temp"
+rm -f "$browser_dirs_temp"

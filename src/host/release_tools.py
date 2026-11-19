@@ -1,5 +1,6 @@
 """Install verified, bounded GitHub release packages without Git or Node.js."""
 
+import base64
 import contextlib
 import hashlib
 import gzip
@@ -26,6 +27,121 @@ REQUIRED = {
 }
 MAX_ARCHIVE_BYTES = 32 * 1024 * 1024
 MAX_JSON_BYTES = 1024 * 1024
+EXTENSION_ID = 'plaaamdfdpajlgakeipabpddfkcaihpn'
+MAX_PREFERENCES_BYTES = 16 * 1024 * 1024
+KNOWN_BROWSER_ROOTS = (
+    'Google/Chrome', 'Google/Chrome Beta', 'Google/Chrome Dev', 'Google/Chrome Canary',
+    'Chromium', 'Aside', 'Dia', 'Dia/User Data', 'Arc', 'Arc/User Data',
+    'BraveSoftware/Brave-Browser', 'BraveSoftware/Brave-Browser-Beta',
+    'BraveSoftware/Brave-Browser-Nightly', 'Microsoft Edge', 'Microsoft Edge Beta',
+    'Microsoft Edge Dev', 'Microsoft Edge Canary', 'Vivaldi', 'Vivaldi Snapshot',
+    'com.operasoftware.Opera', 'com.operasoftware.OperaNext',
+    'com.operasoftware.OperaDeveloper', 'com.operasoftware.OperaGX',
+    'Yandex/YandexBrowser', 'YandexBrowser', 'Thorium',
+)
+
+
+def read_browser_state(path):
+    """Read bounded local browser metadata without exposing its contents in errors or logs."""
+    try:
+        with path.open('rb') as source:
+            contents = source.read(MAX_PREFERENCES_BYTES + 1)
+        if len(contents) <= MAX_PREFERENCES_BYTES:
+            data = json.loads(contents)
+            if isinstance(data, dict):
+                return data
+    except (OSError, ValueError):
+        pass
+    return {}
+
+
+def browser_user_data_dirs():
+    """Find standard Chromium roots and unknown brands with real browser profile metadata."""
+    support = HOME / 'Library/Application Support'
+    roots = {support / name for name in KNOWN_BROWSER_ROOTS if (support / name).is_dir()}
+    # Inspect only three directory levels, never browser caches or arbitrary recursive trees.
+    for pattern in ('*/Local State', '*/*/Local State', '*/*/*/Local State'):
+        for state_file in support.glob(pattern):
+            data = read_browser_state(state_file)
+            profile = data.get('profile')
+            if isinstance(profile, dict) and isinstance(profile.get('info_cache'), dict):
+                roots.add(state_file.parent)
+                continue
+    # Preferences independently identify single-profile forks even without Local State.
+    for filename in ('Preferences', 'Secure Preferences'):
+        for depth in range(1, 4):
+            for preferences_file in support.glob('*/' * depth + filename):
+                preferences = read_browser_state(preferences_file)
+                extensions = preferences.get('extensions', {})
+                settings = extensions.get('settings') if isinstance(extensions, dict) else None
+                if isinstance(settings, dict) and EXTENSION_ID in settings:
+                    roots.add(preferences_file.parent)
+    return sorted(roots, key=str)
+
+
+def extension_folder_id(directory):
+    """Validate an unpacked manifest and derive its stable Chrome extension ID."""
+    try:
+        with (directory / 'manifest.json').open('rb') as source:
+            contents = source.read(MAX_JSON_BYTES + 1)
+        if len(contents) > MAX_JSON_BYTES:
+            return None
+        manifest = json.loads(contents)
+        if not isinstance(manifest, dict) or manifest.get('manifest_version') != 3:
+            return None
+        key = manifest.get('key')
+        if not isinstance(key, str):
+            return None
+        digest = hashlib.sha256(base64.b64decode(key, validate=True)).hexdigest()[:32]
+        return ''.join(chr(97 + int(digit, 16)) for digit in digest)
+    except (OSError, ValueError):
+        return None
+
+
+def installed_extension_paths():
+    """Read only Sing's unpacked path from local browser registrations; never log preferences."""
+    paths = set()
+    for root in browser_user_data_dirs():
+        for filename in ('Secure Preferences', 'Preferences'):
+            for preferences in [root / filename, *root.glob('*/' + filename)]:
+                try:
+                    stored = read_browser_state(preferences).get('extensions', {}).get('settings', {}).get(EXTENSION_ID, {})
+                    registered = stored.get('path')
+                    if not isinstance(registered, str) or not Path(registered).is_absolute():
+                        continue
+                    directory = Path(registered).resolve(strict=True)
+                    if directory.is_dir() and extension_folder_id(directory) == EXTENSION_ID:
+                        paths.add(directory)
+                except (OSError, ValueError, AttributeError, RuntimeError):
+                    continue
+    return sorted(paths, key=str)
+
+
+def update_installed_build(source, target):
+    """Atomically update only a registered copy, keeping its prior folder as a backup."""
+    source, target = Path(source).resolve(), Path(target).resolve()
+    if target not in installed_extension_paths():
+        raise ValueError('extension folder is not registered in a browser')
+    if extension_folder_id(source) != EXTENSION_ID:
+        raise ValueError('release extension identity mismatch')
+    unchanged = source == target
+    if not unchanged:
+        unchanged = True
+        for original in source.rglob('*'):
+            if not original.is_file():
+                continue
+            current = target / original.relative_to(source)
+            if (current.is_symlink() or not current.is_file() or current.stat().st_size != original.stat().st_size
+                    or hashlib.sha256(current.read_bytes()).digest() != hashlib.sha256(original.read_bytes()).digest()):
+                unchanged = False
+                break
+    if unchanged:
+        return {'updated': False, 'path': str(target)}
+    with tempfile.TemporaryDirectory(prefix='.sing-vpn-update-', dir=target.parent) as temporary:
+        staging = Path(temporary) / 'build'
+        shutil.copytree(source, staging)
+        backup = activate(staging, target)
+    return {'updated': True, 'path': str(target), 'backup': backup}
 
 
 def version_tuple(value):
@@ -313,5 +429,8 @@ if __name__ == '__main__':
         print(install_sing()['path'])
     elif len(sys.argv) == 3 and sys.argv[1] == 'install-extension-from':
         print(install_local_extension(sys.argv[2]))
+    elif sys.argv[1:] == ['browser-host-dirs']:
+        for directory in browser_user_data_dirs():
+            sys.stdout.buffer.write(os.fsencode(str(directory / 'NativeMessagingHosts')) + b'\0')
     else:
         raise SystemExit('unsupported release action')

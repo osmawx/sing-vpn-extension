@@ -24,7 +24,7 @@ actual_checksum="$(shasum -a 256 "$download_directory/$asset_name")"
 mkdir "$download_directory/package"
 tar -xzf "$download_directory/$asset_name" -C "$download_directory/package"
 bash "$download_directory/package/install.sh" --prebuilt
-printf '\n%s\n%s\n' 'Local sing installed. Load this folder through your browser extensions page:' \
+printf '\n%s\n%s\n%s\n' 'Local sing installed. Reopen the extension and use Update extension.' \
+  'For a first browser installation, use Load unpacked for:' \
   "$HOME/.local/share/sing-vpn/runtime/build"
-printf '%s\n' 'Use Load unpacked once. Future updates use ready-built releases.'
 pause_before_exit

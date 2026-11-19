@@ -12,6 +12,7 @@ import json
 import os
 import re
 import secrets
+import shlex
 import socket
 import stat
 import struct
@@ -679,13 +680,34 @@ def handle_check_update(message):
 
 
 def handle_update(message):
-    """Install verified release code and preserve the development checkout."""
+    """Update the browser's registered folder while keeping source and configuration intact."""
+    paths = release_tools.installed_extension_paths()
+    target = None
+    requested = message.get("target")
+    if requested is not None:
+        if not isinstance(requested, str) or requested not in [str(path) for path in paths]:
+            raise ValueError("choose a registered extension folder")
+        target = requested
+    elif len(paths) == 1:
+        target = str(paths[0])
+    elif len(paths) > 1:
+        if message.get("supportsTargetChoice") is not True:
+            raise RuntimeError("Multiple installed copies found. Load the latest updater to select the folder to update.")
+        return {"targetRequired": True, "targets": [str(path) for path in paths]}
     release = release_tools.deploy("extension")
+    installed = None
     try:
+        if target:
+            installed = release_tools.update_installed_build(os.path.join(release["path"], "build"), target)
         release_tools.register_host()
     except (OSError, ValueError):
+        if installed:
+            release_tools.rollback_deployment(installed)
         release_tools.rollback_deployment(release)
         raise
+    if installed:
+        stale_browser = message.get("version") is not None and message["version"] != release["version"]
+        return {**release, "updated": release["updated"] or installed["updated"] or stale_browser, "target": target}
     if message.get("managed") is not True:
         return {**release, "loadPath": os.path.join(release["path"], "build")}
     return release
@@ -718,8 +740,11 @@ def handle_versions(_message):
     except (OSError, ValueError, RuntimeError):
         result["sing"]["error"] = "Could not check local sing releases."
     try:
-        metadata = run_update_command([find_brew(), "info", "--json=v2", "sing-box"], 30)
-        result["singBox"]["latest"] = json.loads(metadata.stdout)["formulae"][0]["versions"]["stable"]
+        metadata = release_tools.download("https://formulae.brew.sh/api/formula/sing-box.json",
+                                          release_tools.MAX_JSON_BYTES)
+        latest_version = json.loads(metadata)["versions"]["stable"]
+        release_tools.version_tuple(latest_version)
+        result["singBox"]["latest"] = latest_version
     except (OSError, ValueError, RuntimeError, KeyError, IndexError):
         result["singBox"]["error"] = "Could not check sing-box updates."
     return result
@@ -739,11 +764,32 @@ def handle_update_sing(_message):
 
 
 def handle_update_sing_box(_message):
-    """Upgrade the existing Homebrew engine without stopping an active proxy."""
-    upgraded = run_update_command([find_brew(), "upgrade", "sing-box"], 300)
-    if upgraded.returncode != 0:
-        raise RuntimeError("sing-box update failed; run brew upgrade sing-box in Terminal.")
-    return {"restartRequired": is_socks_listening()}
+    """Run Homebrew visibly in Terminal, outside the browser's execution context."""
+    brew = find_brew()
+    directory = os.path.join(HOME, ".local", "share", "sing-vpn")
+    os.makedirs(directory, mode=0o700, exist_ok=True)
+    descriptor, launcher = tempfile.mkstemp(prefix="Update-sing-box-", suffix=".command", dir=directory)
+    try:
+        with os.fdopen(descriptor, "w") as output:
+            output.write("#!/bin/bash\n" + shlex.quote(brew) + " upgrade sing-box\n"
+                         "update_status=$?\n"
+                         "if [ \"$update_status\" -eq 0 ]; then\n"
+                         "  echo 'sing-box updated. Reconnect local sing in the extension.'\n"
+                         "else\n"
+                         "  echo 'Update failed. Review the Homebrew error above.'\n"
+                         "fi\n"
+                         "rm -f -- \"$0\"\n"
+                         "exit \"$update_status\"\n")
+        os.chmod(launcher, 0o700)
+        opened = run_update_command(["/usr/bin/open", "-a", "Terminal", launcher], 10)
+        if opened.returncode != 0:
+            raise RuntimeError("Could not open Terminal; run brew upgrade sing-box in Terminal.")
+    except (OSError, RuntimeError):
+        with contextlib.suppress(OSError):
+            os.unlink(launcher)
+        raise
+    return {"started": True}
+
 
 
 # Действия, которым нужен установленный `sing`; без него расширение работает в режиме «только браузер»

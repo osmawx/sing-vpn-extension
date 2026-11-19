@@ -117,6 +117,12 @@ class SingMissingTest(unittest.TestCase):
 class UpdateTest(unittest.TestCase):
     """Check release-based update routing without Git or npm."""
 
+    def setUp(self):
+        """Never inspect real browser registrations from unit tests."""
+        installed = patch.object(sing_host.release_tools, "installed_extension_paths", return_value=[])
+        installed.start()
+        self.addCleanup(installed.stop)
+
     def test_checks_release_version_without_git(self):
         """A browser version is compared numerically with the published release."""
         with patch.object(sing_host.release_tools, "latest", return_value={"version": "1.3.2"}), patch.object(
@@ -156,6 +162,68 @@ class UpdateTest(unittest.TestCase):
         self.assertEqual(legacy["loadPath"], "/fake/runtime/build")
         self.assertNotIn("loadPath", managed)
 
+    def test_updates_the_registered_copy_without_load_unpacked(self):
+        """The old folder receives the release even if the managed runtime is already current."""
+        release = {"updated": False, "version": "1.3.30", "path": "/fake/runtime"}
+        installed = {"updated": True, "path": "/fake/project/build", "backup": "/fake/old-build"}
+        with patch.object(sing_host.release_tools, "installed_extension_paths", return_value=[
+                Path("/fake/project/build")]), patch.object(sing_host.release_tools, "deploy", return_value=release), patch.object(
+                sing_host.release_tools, "update_installed_build", return_value=installed) as update, patch.object(
+                sing_host.release_tools, "register_host"):
+            result = sing_host.dispatch({"action":"update", "version":"1.3.0"})
+        self.assertTrue(result["updated"])
+        self.assertEqual(result["target"], "/fake/project/build")
+        self.assertNotIn("loadPath", result)
+        update.assert_called_once_with("/fake/runtime/build", "/fake/project/build")
+
+    def test_multiple_installed_copies_require_a_choice_before_installation(self):
+        """Do not guess a browser profile or write code before the user chooses."""
+        with patch.object(sing_host.release_tools, "installed_extension_paths", return_value=[
+                Path("/fake/first"), Path("/fake/second")]), patch.object(sing_host.release_tools, "deploy") as deploy:
+            result = sing_host.dispatch({"action":"update", "supportsTargetChoice":True})
+        self.assertTrue(result["targetRequired"])
+        self.assertEqual(result["targets"], ["/fake/first", "/fake/second"])
+        deploy.assert_not_called()
+
+    def test_stale_cached_target_cannot_select_another_browser_copy(self):
+        """A previously saved folder cannot silently override an ambiguous current registration."""
+        with patch.object(sing_host.release_tools, "installed_extension_paths", return_value=[
+                Path("/fake/old-browser"), Path("/fake/current-browser")]), patch.object(
+                sing_host.release_tools, "deploy") as deploy:
+            result = sing_host.dispatch({"action":"update", "preferredTarget":"/fake/old-browser", "supportsTargetChoice":True})
+        self.assertTrue(result["targetRequired"])
+        deploy.assert_not_called()
+
+    def test_legacy_client_gets_clear_error_for_multiple_copies(self):
+        """Older popups must not report Already up to date when no copy was selected."""
+        with patch.object(sing_host.release_tools, "installed_extension_paths", return_value=[
+                Path("/fake/first"), Path("/fake/second")]), patch.object(sing_host.release_tools, "deploy") as deploy:
+            result = sing_host.dispatch({"action":"update", "managed":False})
+        self.assertFalse(result["ok"])
+        self.assertIn("Multiple installed copies", result["error"])
+        deploy.assert_not_called()
+
+    def test_arbitrary_update_target_is_rejected_before_download(self):
+        """Message fields cannot bypass registration validation."""
+        with patch.object(sing_host.release_tools, "installed_extension_paths", return_value=[
+                Path("/fake/allowed")]), patch.object(sing_host.release_tools, "deploy") as deploy:
+            result = sing_host.dispatch({"action":"update", "target":"/fake/arbitrary"})
+        self.assertFalse(result["ok"])
+        deploy.assert_not_called()
+
+    def test_wrapper_failure_rolls_back_installed_copy_and_runtime(self):
+        """The registered browser folder cannot stay half-updated after host failure."""
+        release = {"updated": True, "version":"1.3.30", "path":"/fake/runtime"}
+        installed = {"updated": True, "path":"/fake/installed", "backup":"/fake/old-build"}
+        with patch.object(sing_host.release_tools, "installed_extension_paths", return_value=[
+                Path("/fake/installed")]), patch.object(sing_host.release_tools, "deploy", return_value=release), patch.object(
+                sing_host.release_tools, "update_installed_build", return_value=installed), patch.object(
+                sing_host.release_tools, "register_host", side_effect=OSError("fake write failure")), patch.object(
+                sing_host.release_tools, "rollback_deployment") as rollback:
+            result = sing_host.dispatch({"action":"update"})
+        self.assertFalse(result["ok"])
+        self.assertEqual([call.args[0] for call in rollback.call_args_list], [installed, release])
+
     def test_sing_update_does_not_require_existing_sing(self):
         """A legacy or missing CLI can be installed from a release."""
         with patch.object(sing_host.release_tools, "install_sing", return_value={"version": "1.0.1"}), patch.object(
@@ -163,9 +231,23 @@ class UpdateTest(unittest.TestCase):
             response = sing_host.dispatch({"action": "update_sing"})
         self.assertEqual(response, {"ok": True, "version": "1.0.1"})
 
+    def test_engine_update_opens_private_terminal_launcher(self):
+        """Homebrew runs visibly in Terminal rather than as a browser child process."""
+        with tempfile.TemporaryDirectory() as directory, patch.object(sing_host, "HOME", directory), patch.object(
+                sing_host, "find_brew", return_value="/fake path/brew"), patch.object(
+                sing_host, "run_update_command", return_value=subprocess.CompletedProcess([], 0)) as command:
+            result = sing_host.handle_update_sing_box({})
+            self.assertTrue(result["started"])
+            arguments = command.call_args.args[0]
+            self.assertEqual(arguments[:3], ["/usr/bin/open", "-a", "Terminal"])
+            launcher = Path(arguments[3])
+            self.assertEqual(launcher.stat().st_mode & 0o777, 0o700)
+            self.assertIn("'/fake path/brew' upgrade sing-box", launcher.read_text())
+
     def test_engine_upgrade_failure_is_safe(self):
         """Homebrew output is not echoed to the browser or logs."""
-        with patch.object(sing_host, "find_brew", return_value="/fake/brew"), patch.object(
+        with tempfile.TemporaryDirectory() as directory, patch.object(sing_host, "HOME", directory), patch.object(
+                sing_host, "find_brew", return_value="/fake/brew"), patch.object(
                 sing_host, "run_update_command", return_value=subprocess.CompletedProcess(
                     [], 1, stdout="fake secret", stderr="fake secret")):
             response = sing_host.dispatch({"action": "update_sing_box"})
@@ -174,13 +256,13 @@ class UpdateTest(unittest.TestCase):
 
     def test_reports_cli_and_engine_versions_independently(self):
         """Version checks retain installed versions even when another source fails."""
-        commands = [subprocess.CompletedProcess([], 0, stdout="sing-box version 1.12.0\n"),
-                    subprocess.CompletedProcess([], 0, stdout='{"formulae":[{"versions":{"stable":"1.13.0"}}]}')]
+        commands = [subprocess.CompletedProcess([], 0, stdout="sing-box version 1.12.0\n")]
         with patch.object(sing_host, "installed_sing_version", return_value="1.0.1"), patch.object(
                 sing_host.release_tools, "latest", return_value={"version":"1.0.2"}), patch.object(
                 sing_host, "find_sing_box_binary", return_value="/fake/sing-box"), patch.object(
                 sing_host, "find_brew", return_value="/fake/brew"), patch.object(
-                sing_host, "run_update_command", side_effect=commands):
+                sing_host, "run_update_command", side_effect=commands), patch.object(
+                sing_host.release_tools, "download", return_value=b'{"versions":{"stable":"1.13.0"}}'):
             result = sing_host.dispatch({"action":"versions"})
         self.assertEqual(result["sing"], {"current":"1.0.1", "latest":"1.0.2"})
         self.assertEqual(result["singBox"], {"current":"1.12.0", "latest":"1.13.0"})
@@ -221,6 +303,7 @@ class InstallerTest(unittest.TestCase):
         )
         self.make_script(self.repo / "install.sh", installer_text)
         (self.repo / "src/host/sing_host.py").write_text("# test host\n")
+        shutil.copyfile(source.parent / "src/host/release_tools.py", self.repo / "src/host/release_tools.py")
         self.make_script(self.fake_bin / "node", "#!/bin/sh\necho v20.0.0\n")
         self.make_script(self.fake_bin / "npm", """#!/bin/bash
 printf '%s\n' "$*" >> "$BUILD_LOG"
@@ -321,6 +404,35 @@ printf '#!/bin/sh\\nexec "$REAL_PYTHON" "$@"\\n' > "$FAKE_BIN/python3"
         self.assertEqual(removed.returncode, 0, removed.stderr)
         self.assertFalse(manifest.exists())
         self.assertEqual(unrelated_manifest.read_text(), "unrelated host")
+
+    def test_registers_all_chromium_families_and_unknown_brand(self):
+        """Dia, Arc and future Chromium brands receive the same safe bridge registration."""
+        self.make_dependency_commands()
+        names = ("Dia/User Data", "Arc/User Data", "Microsoft Edge", "Vivaldi",
+                 "com.operasoftware.Opera", "Google/Chrome Canary", "Yandex/YandexBrowser",
+                 "Future Vendor/Future Browser/User Data")
+        roots = []
+        for name in names:
+            root = self.home / "Library/Application Support" / name
+            hosts = root / "NativeMessagingHosts"
+            hosts.mkdir(parents=True, exist_ok=True)
+            (hosts / "other.host.json").write_text("unrelated host")
+            roots.append(root)
+        (roots[-1] / "Local State").write_text('{"profile":{"info_cache":{}}}')
+        result = self.run_installer()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for root in roots:
+            manifest = root / "NativeMessagingHosts/com.singvpn.host.json"
+            self.assertTrue(manifest.is_file(), root)
+            self.assertEqual(json.loads(manifest.read_text())["allowed_origins"],
+                             ["chrome-extension://plaaamdfdpajlgakeipabpddfkcaihpn/"])
+            self.assertEqual(manifest.stat().st_mode & 0o777, 0o600)
+        removed = subprocess.run([str(self.repo / "install.sh"), "uninstall"], env=self.environment,
+                                 capture_output=True, text=True, timeout=15, check=False)
+        self.assertEqual(removed.returncode, 0, removed.stderr)
+        for root in roots:
+            self.assertFalse((root / "NativeMessagingHosts/com.singvpn.host.json").exists())
+            self.assertEqual((root / "NativeMessagingHosts/other.host.json").read_text(), "unrelated host")
 
     def test_reuses_installed_dependencies_and_sing(self):
         """Повторный запуск не переустанавливает готовые зависимости и sing."""
