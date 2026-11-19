@@ -30,10 +30,12 @@ In scope:
 - browser traffic leaving outside the chosen proxy while the extension shows it as connected;
 - credentials or subscription URLs sent anywhere except the proxy or subscription host the user chose;
 - the native messaging host executing anything other than the documented `sing` actions, or accepting messages from other extensions;
-- the update action pulling from a repository other than `https://github.com/osmawx/sing-vpn-extension.git`, overwriting local changes, or executing shell input;
+- the update action downloading code outside the fixed official GitHub Release assets, accepting invalid checksums or unsafe archive entries, overwriting modified managed code, or executing shell input;
 - `install.sh` overwriting or deleting user files.
 
 Out of scope:
 
 - vulnerabilities in Chrome, sing-box or the proxy protocols themselves (report them upstream);
 - a malicious proxy server the user added on purpose.
+
+Release downloads use HTTPS and SHA-256 checksums from the official release. Checksums detect corrupted downloads; they do not replace trust in the repository maintainers and GitHub account. Runtime updates keep a previous-package backup and never contain subscription URLs, generated proxy configurations or credentials.

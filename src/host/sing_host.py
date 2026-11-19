@@ -22,7 +22,13 @@ import threading
 import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import parse_qsl, unquote, urlencode, urlsplit
+
+# Isolated Python omits the script directory; load only our adjacent trusted module.
+release_spec = importlib.util.spec_from_file_location(
+    "sing_release_tools", os.path.join(os.path.dirname(__file__), "release_tools.py"))
+release_tools = importlib.util.module_from_spec(release_spec)
+release_spec.loader.exec_module(release_tools)
 
 HOME = os.path.expanduser("~")
 REPOSITORY_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -53,10 +59,8 @@ SELECT_TIMEOUT_SECONDS = 60
 PORT_WAIT_ATTEMPTS = 50
 PORT_WAIT_INTERVAL_SECONDS = 0.1
 MAX_MESSAGE_BYTES = 1024 * 1024
+MAX_LOG_BYTES = 128 * 1024
 MAX_NAME_LENGTH = 200
-UPDATE_REPOSITORY_URL = "https://github.com/osmawx/sing-vpn-extension.git"
-UPDATE_GIT_TIMEOUT_SECONDS = 120
-UPDATE_BUILD_TIMEOUT_SECONDS = 180
 MAX_CONFIGURATION_BYTES = 512 * 1024
 CONFIGURATION_FILES = ("sing.sub", "custom.txt", "exceptions.json", "sing.current", "sing.json")
 # Имена, которые `sing select` воспринимает как подкоманды, а не как сервер
@@ -491,6 +495,85 @@ def read_configuration_file(filename):
     return contents
 
 
+def collect_log_secrets(data):
+    """Collect credential fields from parsed sing-box configuration."""
+    secrets_found = set()
+    if isinstance(data, dict):
+        for key, value in data.items():
+            if (isinstance(value, str) and value
+                    and re.search(r"password|username|uuid|private.?key|pre.?shared.?key|token|secret",
+                                  key, re.IGNORECASE)):
+                secrets_found.add(value)
+            secrets_found.update(collect_log_secrets(value))
+    elif isinstance(data, list):
+        for value in data:
+            secrets_found.update(collect_log_secrets(value))
+    return secrets_found
+
+
+def redact_log(text):
+    """Remove known credentials, links and common secret formats from log text."""
+    known_secrets = collect_log_secrets(json.loads(read_configuration_file("sing.json") or '{}'))
+    subscription = (read_configuration_file("sing.sub") or '').strip()
+    if subscription:
+        known_secrets.add(subscription)
+        parsed = urlsplit(subscription)
+        known_secrets.update(unquote(value) for value in (parsed.username, parsed.password) if value)
+        known_secrets.update(value for _key, value in parse_qsl(parsed.query) if value)
+    custom_links = (read_configuration_file("custom.txt") or '').splitlines()
+    if any(line.strip() and not line.lstrip().startswith('#') for line in custom_links):
+        selector = load_select_module()
+        for line in custom_links:
+            if line.strip() and not line.lstrip().startswith('#'):
+                known_secrets.update(collect_log_secrets(selector.build_outbound(line.strip())))
+    # Strip terminal escapes before matching secrets that could contain formatting.
+    text = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', text)
+    text = re.sub(r'-----BEGIN [^-]*PRIVATE KEY-----.*?-----END [^-]*PRIVATE KEY-----',
+                  '[REDACTED]', text, flags=re.DOTALL)
+    text = re.sub(r'(?i)\b[a-z][a-z0-9+.-]*://[^\s<>]+', '[REDACTED URL]', text)
+    text = re.sub(r'(?i)\b[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\b', '[REDACTED]', text)
+    text = re.sub(r'(?<![\w+/])[A-Za-z0-9+/]{32,}={0,2}(?![\w=])', '[REDACTED]', text)
+    text = re.sub(r'''(?ix)(["']?(?:password|username|private[_-]?key|token|secret)["']?\s*[:=]\s*)
+                      (?:"[^"]*"|'[^']*'|[^\s,;]+)''', r'\1[REDACTED]', text)
+    # Match formats first: a short known secret could otherwise break a URL prefix.
+    if known_secrets:
+        alternatives = '|'.join(re.escape(secret) for secret in sorted(known_secrets, key=len, reverse=True))
+        # Preserve existing markers and never scan newly inserted markers again.
+        text = re.sub(r'\[REDACTED(?: URL)?\]|' + alternatives,
+                      lambda match: match.group() if match.group() in ('[REDACTED]', '[REDACTED URL]')
+                      else '[REDACTED]', text)
+    return text.replace(HOME, '~')
+
+
+def handle_export_logs(_message):
+    """Export a bounded log tail; omit content if safe reading or redaction fails."""
+    result = {"status": "unavailable", "text": "", "truncated": False}
+    try:
+        # Nonblocking open prevents a FIFO from hanging the native messaging host.
+        descriptor = os.open(LOG_FILE, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return {"status": "missing", "text": "", "truncated": False}
+    except OSError:
+        return result
+    try:
+        with os.fdopen(descriptor, 'rb') as source:
+            metadata = os.fstat(source.fileno())
+            if not stat.S_ISREG(metadata.st_mode):
+                return result
+            truncated = metadata.st_size > MAX_LOG_BYTES
+            source.seek(max(0, metadata.st_size - MAX_LOG_BYTES))
+            contents = source.read(MAX_LOG_BYTES)
+        if truncated:
+            # Discard the cut first line so redaction never sees a partial credential.
+            contents = contents.partition(b'\n')[2]
+        redacted = redact_log(contents.decode('utf-8', errors='replace')).encode('utf-8')
+        # Redaction may grow short secrets; keep even JSON-escaped output under 1 MiB.
+        return {"status": "available", "text": redacted[-MAX_LOG_BYTES:].decode('utf-8', errors='ignore'),
+                "truncated": truncated or len(redacted) > MAX_LOG_BYTES}
+    except (OSError, ValueError, RuntimeError, ImportError, AttributeError, KeyError, IndexError):
+        return result
+
+
 def write_private_file(path, contents):
     """Атомарно записывает файл с секретами и правами 0600."""
     descriptor, temporary_path = tempfile.mkstemp(dir=os.path.dirname(path))
@@ -561,12 +644,12 @@ def handle_import_configuration(message):
 
 
 def run_update_command(arguments, timeout_seconds):
-    """Запускает фиксированную команду обновления в checkout без shell и вывода секретов."""
+    """Run a fixed local version/update command without shell or raw error output."""
     environment = child_environment()
     environment["GIT_TERMINAL_PROMPT"] = "0"
     try:
         return subprocess.run(
-            arguments, cwd=REPOSITORY_DIR, env=environment, shell=False,
+            arguments, cwd=HOME, env=environment, shell=False,
             stdin=subprocess.DEVNULL, capture_output=True, text=True,
             timeout=timeout_seconds, check=False,
         )
@@ -574,55 +657,93 @@ def run_update_command(arguments, timeout_seconds):
         raise RuntimeError("update timed out") from error
 
 
-def handle_check_update(_message):
-    """Сравнивает публичный main с checkout без скачивания и установки кода."""
-    if not os.path.exists(os.path.join(REPOSITORY_DIR, ".git")):
-        raise RuntimeError("update requires a Git checkout")
-    remote = run_update_command(
-        ["git", "ls-remote", UPDATE_REPOSITORY_URL, "refs/heads/main"], 20,
-    )
-    if remote.returncode != 0:
-        raise RuntimeError("update check failed; check GitHub access")
-    revision = remote.stdout.split()[0] if remote.stdout.strip() else ""
-    if not re.fullmatch(r"[0-9a-f]{40}", revision):
-        raise RuntimeError("cannot read latest revision")
-    # Не предлагаем обновление, если локальная ветка уже содержит публичный main.
-    ancestor = run_update_command(
-        ["git", "merge-base", "--is-ancestor", revision, "HEAD"], 10,
-    )
-    return {"available": ancestor.returncode != 0}
+def extension_version(message):
+    """Prefer the loaded browser version, including during release migration."""
+    version = message.get("version")
+    if version is None:
+        try:
+            with open(os.path.join(REPOSITORY_DIR, "build", "manifest.json"), encoding="utf-8") as source:
+                version = json.load(source)["version"]
+        except (OSError, ValueError, KeyError):
+            version = "0.0.0"
+    release_tools.version_tuple(version)
+    return version
 
 
-def handle_update(_message):
-    """Получает fast-forward из публичного main по HTTPS и пересобирает расширение."""
-    if not os.path.exists(os.path.join(REPOSITORY_DIR, ".git")):
-        raise RuntimeError("update requires a Git checkout")
+def handle_check_update(message):
+    """Compare stable release versions without requiring a local Git checkout."""
+    release = release_tools.latest("extension")
+    current = extension_version(message)
+    return {"available": release_tools.version_tuple(release["version"]) > release_tools.version_tuple(current),
+            "current": current, "latest": release["version"]}
 
-    status = run_update_command(["git", "status", "--porcelain"], UPDATE_GIT_TIMEOUT_SECONDS)
-    if status.returncode != 0:
-        raise RuntimeError("cannot inspect Git checkout")
-    if status.stdout.strip():
-        raise RuntimeError("local changes prevent update")
 
-    current_revision = run_update_command(["git", "rev-parse", "HEAD"], UPDATE_GIT_TIMEOUT_SECONDS)
-    if current_revision.returncode != 0:
-        raise RuntimeError("cannot read current revision")
+def handle_update(message):
+    """Install verified release code and preserve the development checkout."""
+    release = release_tools.deploy("extension")
+    try:
+        release_tools.register_host()
+    except (OSError, ValueError):
+        release_tools.rollback_deployment(release)
+        raise
+    if message.get("managed") is not True:
+        return {**release, "loadPath": os.path.join(release["path"], "build")}
+    return release
 
-    pulled = run_update_command(["git", "pull", "--ff-only", UPDATE_REPOSITORY_URL, "main"], UPDATE_GIT_TIMEOUT_SECONDS)
-    if pulled.returncode != 0:
-        raise RuntimeError("git pull failed; check GitHub access and local history")
 
-    installed = run_update_command(["npm", "ci", "--no-audit", "--no-fund"], UPDATE_BUILD_TIMEOUT_SECONDS)
-    if installed.returncode != 0:
-        raise RuntimeError("npm ci failed; run ./install.sh")
-    built = run_update_command(["npm", "run", "build"], UPDATE_BUILD_TIMEOUT_SECONDS)
-    if built.returncode != 0:
-        raise RuntimeError("build failed; run ./install.sh")
+def installed_sing_version():
+    """Read metadata beside the actual CLI target without executing legacy --version."""
+    try:
+        root = os.path.dirname(os.path.dirname(os.path.realpath(SING_BIN)))
+        with open(os.path.join(root, "VERSION"), encoding="utf-8") as source:
+            version = source.read(100).strip()
+        release_tools.version_tuple(version)
+        return version
+    except (OSError, ValueError):
+        return None
 
-    new_revision = run_update_command(["git", "rev-parse", "HEAD"], UPDATE_GIT_TIMEOUT_SECONDS)
-    if new_revision.returncode != 0:
-        raise RuntimeError("cannot read updated revision")
-    return {"updated": current_revision.stdout.strip() != new_revision.stdout.strip()}
+
+def handle_versions(_message):
+    """Report local CLI and engine versions, with independent update errors."""
+    result = {"sing": {"current": installed_sing_version()}, "singBox": {"current": None}}
+    try:
+        engine = run_update_command([find_sing_box_binary(), "version"], 10)
+        match = re.search(r"sing-box version (\d+\.\d+\.\d+)", engine.stdout)
+        if engine.returncode == 0 and match:
+            result["singBox"]["current"] = match.group(1)
+    except (OSError, RuntimeError):
+        pass
+    try:
+        result["sing"]["latest"] = release_tools.latest("sing")["version"]
+    except (OSError, ValueError, RuntimeError):
+        result["sing"]["error"] = "Could not check local sing releases."
+    try:
+        metadata = run_update_command([find_brew(), "info", "--json=v2", "sing-box"], 30)
+        result["singBox"]["latest"] = json.loads(metadata.stdout)["formulae"][0]["versions"]["stable"]
+    except (OSError, ValueError, RuntimeError, KeyError, IndexError):
+        result["singBox"]["error"] = "Could not check sing-box updates."
+    return result
+
+
+def find_brew():
+    """Use only an installed Homebrew executable at a documented fixed path."""
+    for candidate in ("/opt/homebrew/bin/brew", "/usr/local/bin/brew"):
+        if os.access(candidate, os.X_OK):
+            return candidate
+    raise RuntimeError("Homebrew is required to update sing-box; run the installer.")
+
+
+def handle_update_sing(_message):
+    """Install CLI release code while keeping configuration and runtime state."""
+    return release_tools.install_sing()
+
+
+def handle_update_sing_box(_message):
+    """Upgrade the existing Homebrew engine without stopping an active proxy."""
+    upgraded = run_update_command([find_brew(), "upgrade", "sing-box"], 300)
+    if upgraded.returncode != 0:
+        raise RuntimeError("sing-box update failed; run brew upgrade sing-box in Terminal.")
+    return {"restartRequired": is_socks_listening()}
 
 
 # Действия, которым нужен установленный `sing`; без него расширение работает в режиме «только браузер»
@@ -639,7 +760,11 @@ ACTION_HANDLERS = {
     "ping": handle_ping,
     "update": handle_update,
     "check_update": handle_check_update,
+    "versions": handle_versions,
+    "update_sing": handle_update_sing,
+    "update_sing_box": handle_update_sing_box,
     "export_configuration": handle_export_configuration,
+    "export_logs": handle_export_logs,
     "validate_configuration": handle_validate_configuration,
     "import_configuration": handle_import_configuration,
 }

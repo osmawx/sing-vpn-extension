@@ -115,151 +115,75 @@ class SingMissingTest(unittest.TestCase):
 
 
 class UpdateTest(unittest.TestCase):
-    """Проверки обновления checkout без сетевых команд и изменения файлов пользователя."""
+    """Check release-based update routing without Git or npm."""
 
-    def setUp(self):
-        """Создаёт изолированный checkout для обновления."""
-        self.temporary_directory = tempfile.TemporaryDirectory()
-        self.addCleanup(self.temporary_directory.cleanup)
-        self.repository = Path(self.temporary_directory.name)
-        (self.repository / ".git").mkdir()
-        repository_patch = patch.object(sing_host, "REPOSITORY_DIR", str(self.repository))
-        repository_patch.start()
-        self.addCleanup(repository_patch.stop)
+    def test_checks_release_version_without_git(self):
+        """A browser version is compared numerically with the published release."""
+        with patch.object(sing_host.release_tools, "latest", return_value={"version": "1.3.2"}), patch.object(
+                sing_host.subprocess, "run") as run:
+            response = sing_host.dispatch({"action": "check_update", "version": "1.3.1"})
+        self.assertEqual(response, {"ok": True, "available": True, "current": "1.3.1", "latest": "1.3.2"})
+        run.assert_not_called()
 
-    def test_rejects_local_changes_before_pull(self):
-        """Локальные изменения запрещают получение и сборку обновления."""
-        with patch.object(sing_host.subprocess, "run", return_value=subprocess.CompletedProcess(
-                [], 0, stdout=" M src/extension/popup.js\n", stderr="")) as run_command:
+    def test_update_uses_prebuilt_release_and_requests_migration(self):
+        """Legacy checkouts are preserved; the popup receives the managed build path."""
+        with patch.object(sing_host.release_tools, "deploy", return_value={
+                "updated": True, "version": "1.3.2", "path": "/fake/runtime"}), patch.object(
+                sing_host.release_tools, "register_host") as register:
             response = sing_host.dispatch({"action": "update"})
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["loadPath"], "/fake/runtime/build")
+        register.assert_called_once()
 
-        self.assertEqual(response, {"ok": False, "error": "local changes prevent update"})
-        self.assertEqual(run_command.call_count, 1)
+    def test_failed_host_registration_rolls_back_activated_runtime(self):
+        """A wrapper failure must not leave an unannounced runtime update active."""
+        release = {"updated": True, "path": "/fake/runtime", "backup": "/fake/backup"}
+        with patch.object(sing_host.release_tools, "deploy", return_value=release), patch.object(
+                sing_host.release_tools, "register_host", side_effect=OSError("fake write error")), patch.object(
+                sing_host.release_tools, "rollback_deployment") as rollback:
+            result = sing_host.dispatch({"action":"update"})
+        self.assertFalse(result["ok"])
+        rollback.assert_called_once_with(release)
 
-    def test_check_reports_new_remote_revision_without_changing_checkout(self):
-        """Проверка новых коммитов не делает pull, install или build."""
-        revision = "a" * 40
-        results = [
-            subprocess.CompletedProcess([], 0, stdout=f"{revision}\trefs/heads/main\n", stderr=""),
-            subprocess.CompletedProcess([], 128, stdout="", stderr="unknown revision"),
-        ]
-        with patch.object(sing_host.subprocess, "run", side_effect=results) as run_command:
-            response = sing_host.dispatch({"action": "check_update"})
-        self.assertEqual(response, {"ok": True, "available": True})
-        self.assertEqual(run_command.call_args_list[0].args[0],
-                         ["git", "ls-remote", sing_host.UPDATE_REPOSITORY_URL, "refs/heads/main"])
-        self.assertEqual(run_command.call_args_list[1].args[0],
-                         ["git", "merge-base", "--is-ancestor", revision, "HEAD"])
+    def test_migration_prompt_persists_until_managed_browser_build_is_loaded(self):
+        """Changing host paths alone must not dismiss the one-time browser migration."""
+        release = {"updated": False, "version": "1.3.2", "path": "/fake/runtime"}
+        with patch.object(sing_host, "REPOSITORY_DIR", "/fake/runtime"), patch.object(
+                sing_host.release_tools, "deploy", return_value=release), patch.object(
+                sing_host.release_tools, "register_host"):
+            legacy = sing_host.dispatch({"action":"update", "managed":False})
+            managed = sing_host.dispatch({"action":"update", "managed":True})
+        self.assertEqual(legacy["loadPath"], "/fake/runtime/build")
+        self.assertNotIn("loadPath", managed)
 
-    def test_check_does_not_offer_older_remote_revision(self):
-        """Локальная ветка впереди main не получает ложного уведомления."""
-        results = [
-            subprocess.CompletedProcess([], 0, stdout=f"{'b' * 40}\trefs/heads/main\n", stderr=""),
-            subprocess.CompletedProcess([], 0, stdout="", stderr=""),
-        ]
-        with patch.object(sing_host.subprocess, "run", side_effect=results):
-            response = sing_host.dispatch({"action": "check_update"})
-        self.assertEqual(response, {"ok": True, "available": False})
+    def test_sing_update_does_not_require_existing_sing(self):
+        """A legacy or missing CLI can be installed from a release."""
+        with patch.object(sing_host.release_tools, "install_sing", return_value={"version": "1.0.1"}), patch.object(
+                sing_host.os, "access", return_value=False):
+            response = sing_host.dispatch({"action": "update_sing"})
+        self.assertEqual(response, {"ok": True, "version": "1.0.1"})
 
-    def test_requires_git_checkout(self):
-        """Обновление не запускает команды вне Git checkout."""
-        (self.repository / ".git").rmdir()
-        with patch.object(sing_host.subprocess, "run") as run_command:
-            response = sing_host.dispatch({"action": "update"})
+    def test_engine_upgrade_failure_is_safe(self):
+        """Homebrew output is not echoed to the browser or logs."""
+        with patch.object(sing_host, "find_brew", return_value="/fake/brew"), patch.object(
+                sing_host, "run_update_command", return_value=subprocess.CompletedProcess(
+                    [], 1, stdout="fake secret", stderr="fake secret")):
+            response = sing_host.dispatch({"action": "update_sing_box"})
+        self.assertFalse(response["ok"])
+        self.assertNotIn("fake secret", str(response))
 
-        self.assertEqual(response, {"ok": False, "error": "update requires a Git checkout"})
-        run_command.assert_not_called()
-
-    def test_pulls_and_builds_before_reporting_update(self):
-        """Чистый checkout получает fast-forward и заново собирает расширение."""
-        results = [
-            subprocess.CompletedProcess([], 0, stdout="", stderr=""),
-            subprocess.CompletedProcess([], 0, stdout="old\n", stderr=""),
-            subprocess.CompletedProcess([], 0, stdout="", stderr=""),
-            subprocess.CompletedProcess([], 0, stdout="", stderr=""),
-            subprocess.CompletedProcess([], 0, stdout="", stderr=""),
-            subprocess.CompletedProcess([], 0, stdout="new\n", stderr=""),
-        ]
-        with patch.object(sing_host.subprocess, "run", side_effect=results) as run_command:
-            response = sing_host.dispatch({"action": "update"})
-
-        self.assertEqual(response, {"ok": True, "updated": True})
-        commands = [call.args[0] for call in run_command.call_args_list]
-        self.assertEqual(commands, [
-            ["git", "status", "--porcelain"],
-            ["git", "rev-parse", "HEAD"],
-            ["git", "pull", "--ff-only", sing_host.UPDATE_REPOSITORY_URL, "main"],
-            ["npm", "ci", "--no-audit", "--no-fund"],
-            ["npm", "run", "build"],
-            ["git", "rev-parse", "HEAD"],
-        ])
-        self.assertTrue(all(call.kwargs["cwd"] == str(self.repository) for call in run_command.call_args_list))
-        self.assertTrue(all(call.kwargs["shell"] is False for call in run_command.call_args_list))
-
-    def test_pull_failure_stops_before_build(self):
-        """Ошибка Git не запускает npm и возвращает безопасное сообщение."""
-        results = [
-            subprocess.CompletedProcess([], 0, stdout="", stderr=""),
-            subprocess.CompletedProcess([], 0, stdout="old\n", stderr=""),
-            subprocess.CompletedProcess([], 1, stdout="", stderr="secret remote URL"),
-        ]
-        with patch.object(sing_host.subprocess, "run", side_effect=results) as run_command:
-            response = sing_host.dispatch({"action": "update"})
-
-        self.assertEqual(response, {"ok": False, "error": "git pull failed; check GitHub access and local history"})
-        self.assertEqual(run_command.call_count, 3)
-        self.assertNotIn("secret remote URL", str(response))
-
-    def test_updates_branch_without_upstream(self):
-        """Checkout без upstream может проверить origin/main без изменения локальных коммитов."""
-        remote = self.repository / "remote.git"
-        checkout = self.repository / "checkout"
-        commands = [
-            ["git", "init", "--bare", str(remote)],
-            ["git", "init", "-b", "main", str(checkout)],
-            ["git", "-C", str(checkout), "config", "user.name", "Test User"],
-            ["git", "-C", str(checkout), "config", "user.email", "test@example.invalid"],
-        ]
-        for command in commands:
-            subprocess.run(command, check=True, capture_output=True)
-        (checkout / "README.md").write_text("test repository\n")
-        for command in (
-            ["git", "-C", str(checkout), "add", "README.md"],
-            ["git", "-C", str(checkout), "commit", "-m", "test: base"],
-            ["git", "-C", str(checkout), "remote", "add", "origin", str(remote)],
-            ["git", "-C", str(checkout), "push", "-u", "origin", "main"],
-            ["git", "-C", str(checkout), "switch", "-c", "feat/local"],
-        ):
-            subprocess.run(command, check=True, capture_output=True)
-        current_run_command = sing_host.run_update_command
-
-        def run_without_npm(arguments, timeout_seconds):
-            """Пускает Git в локальный remote, npm заменяет безопасным ответом."""
-            if arguments[0] == "npm":
-                return subprocess.CompletedProcess(arguments, 0, stdout="", stderr="")
-            return current_run_command(arguments, timeout_seconds)
-
-        with patch.object(sing_host, "UPDATE_REPOSITORY_URL", str(remote)), patch.object(
-                sing_host, "REPOSITORY_DIR", str(checkout)), patch.object(
-                sing_host, "run_update_command", side_effect=run_without_npm):
-            response = sing_host.dispatch({"action": "update"})
-
-        self.assertEqual(response, {"ok": True, "updated": False})
-
-    def test_npm_failure_stops_before_build(self):
-        """Ошибка npm не возвращает успешное обновление и не запускает сборку."""
-        results = [
-            subprocess.CompletedProcess([], 0, stdout="", stderr=""),
-            subprocess.CompletedProcess([], 0, stdout="old\n", stderr=""),
-            subprocess.CompletedProcess([], 0, stdout="", stderr=""),
-            subprocess.CompletedProcess([], 1, stdout="", stderr="secret token"),
-        ]
-        with patch.object(sing_host.subprocess, "run", side_effect=results) as run_command:
-            response = sing_host.dispatch({"action": "update"})
-
-        self.assertEqual(response, {"ok": False, "error": "npm ci failed; run ./install.sh"})
-        self.assertEqual(run_command.call_count, 4)
-        self.assertNotIn("secret token", str(response))
+    def test_reports_cli_and_engine_versions_independently(self):
+        """Version checks retain installed versions even when another source fails."""
+        commands = [subprocess.CompletedProcess([], 0, stdout="sing-box version 1.12.0\n"),
+                    subprocess.CompletedProcess([], 0, stdout='{"formulae":[{"versions":{"stable":"1.13.0"}}]}')]
+        with patch.object(sing_host, "installed_sing_version", return_value="1.0.1"), patch.object(
+                sing_host.release_tools, "latest", return_value={"version":"1.0.2"}), patch.object(
+                sing_host, "find_sing_box_binary", return_value="/fake/sing-box"), patch.object(
+                sing_host, "find_brew", return_value="/fake/brew"), patch.object(
+                sing_host, "run_update_command", side_effect=commands):
+            result = sing_host.dispatch({"action":"versions"})
+        self.assertEqual(result["sing"], {"current":"1.0.1", "latest":"1.0.2"})
+        self.assertEqual(result["singBox"], {"current":"1.12.0", "latest":"1.13.0"})
 
 class InstallerTest(unittest.TestCase):
     """Проверки установки native host без изменений домашнего каталога пользователя."""

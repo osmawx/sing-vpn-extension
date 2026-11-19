@@ -447,15 +447,18 @@ async function togglePower() {
 
 /**
  * Переключает вкладку.
- * @param {string} viewName - home | locations | account.
+ * @param {string} viewName - home, locations, account or an account subview.
  */
 function switchView(viewName) {
+  const tabName = viewName.startsWith('account-') ? 'account' : viewName;
   document.querySelectorAll('.view').forEach((view) => {
     view.hidden = view.id !== `view-${viewName}`;
   });
   document.querySelectorAll('.tab').forEach((tab) => {
-    tab.classList.toggle('active', tab.dataset.view === viewName);
+    tab.classList.toggle('active', tab.dataset.view === tabName);
   });
+  document.querySelector('main').scrollTop = 0;
+  if (viewName === 'account-settings') { refreshComponentVersions(); }
 }
 
 /** Обработчик формы добавления серверов. */
@@ -479,7 +482,7 @@ async function handleAddSubmit(event) {
   await refreshAll();
 }
 
-document.querySelectorAll('.tab').forEach((tab) => {
+document.querySelectorAll('[data-view]').forEach((tab) => {
   tab.addEventListener('click', () => switchView(tab.dataset.view));
 });
 elements.power.addEventListener('click', togglePower);
@@ -520,6 +523,11 @@ async function updateExtension() {
     button.disabled = false;
     return;
   }
+  if (result.loadPath) {
+    message.textContent = `Release installed. Open your browser extensions page and use Load unpacked once for: ${result.loadPath}`;
+    button.disabled = false;
+    return;
+  }
   if (!result.updated) {
     message.textContent = 'Already up to date.';
     button.disabled = false;
@@ -530,6 +538,86 @@ async function updateExtension() {
 }
 
 elements['update-extension'].addEventListener('click', updateExtension);
+
+/** Shows installed CLI and engine versions and their available stable releases. */
+async function refreshComponentVersions() {
+  elements['check-component-versions'].disabled = true;
+  try {
+    const result = await send({ type: 'componentVersions' });
+    elements['component-message'].hidden = false;
+    if (!result.ok) {
+      elements['component-message'].textContent = result.hostMissing
+        ? 'Install local sing to check versions.' : 'Could not check local versions.';
+      elements['sing-version'].textContent = 'Unavailable';
+      elements['sing-box-version'].textContent = 'Unavailable';
+      return;
+    }
+    elements['sing-version'].textContent = result.sing.current || 'Legacy install / unknown';
+    elements['sing-latest'].textContent = result.sing.latest || 'Unavailable';
+    elements['sing-box-version'].textContent = result.singBox.current || 'Not installed';
+    elements['sing-box-latest'].textContent = result.singBox.latest || 'Unavailable';
+    elements['component-message'].textContent = [result.sing.error, result.singBox.error].filter(Boolean).join(' ');
+    elements['component-message'].hidden = !elements['component-message'].textContent;
+  } finally {
+    elements['check-component-versions'].disabled = false;
+  }
+}
+
+/** Updates one local component without replacing user proxy configuration. */
+async function updateLocalComponent(type) {
+  elements['update-sing'].disabled = true;
+  elements['update-sing-box'].disabled = true;
+  const message = elements['component-message'];
+  message.hidden = false;
+  message.textContent = 'Updating local component…';
+  try {
+    const result = await send({ type });
+    if (!result.ok) {
+      message.textContent = result.hostMissing ? 'Install local sing first.' : result.error;
+      return;
+    }
+    await refreshComponentVersions();
+    message.hidden = false;
+    message.textContent = result.restartRequired
+      ? 'Updated. Reconnect local sing to use the new engine.' : 'Local component updated.';
+  } finally {
+    elements['update-sing'].disabled = false;
+    elements['update-sing-box'].disabled = false;
+  }
+}
+
+elements['check-component-versions'].addEventListener('click', refreshComponentVersions);
+elements['update-sing'].addEventListener('click', () => updateLocalComponent('updateSing'));
+elements['update-sing-box'].addEventListener('click', () => updateLocalComponent('updateSingBox'));
+
+/** Downloads diagnostic JSON without changing the active proxy or configuration. */
+async function exportLogsFile() {
+  elements['export-logs'].disabled = true;
+  const message = elements['logs-message'];
+  message.hidden = false;
+  message.className = 'hint muted';
+  message.textContent = 'Preparing logs…';
+  try {
+    const result = await send({ type: 'exportLogs' });
+    if (!result.ok) { throw new Error('Could not export logs. Reopen the extension and try again.'); }
+    const url = URL.createObjectURL(new Blob([JSON.stringify(result.report, null, 2)], { type: 'application/json' }));
+    const download = document.createElement('a');
+    download.href = url;
+    download.download = `sing-vpn-logs-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+    download.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    message.textContent = result.report.native.status === 'available'
+      ? 'Logs downloaded. Review the file before sharing.'
+      : 'Browser diagnostics downloaded. Local sing logs are unavailable.';
+  } catch (error) {
+    message.className = 'error';
+    message.textContent = error.message;
+  } finally {
+    elements['export-logs'].disabled = false;
+  }
+}
+
+elements['export-logs'].addEventListener('click', exportLogsFile);
 
 /** Блокирует действия с файлом на время импорта или экспорта. */
 function setConfigurationBusy(busy) {
@@ -636,10 +724,32 @@ async function refreshSingList() {
   if (result.hostMissing) {
     // Сохранённые локации появятся, но подключение требует исправного native host.
     elements['list-note'].hidden = false;
-    elements['list-note'].textContent = 'Local sing unavailable. Saved locations remain. Run ./install.sh and reopen the popup.';
+    elements['list-note'].textContent = 'Local sing unavailable. Saved locations remain. Open Account > Settings to install local sing.';
     await refreshAll();
   }
 }
+
+/** Downloads an executable macOS installer archive without needing a native host. */
+function downloadSingInstaller() {
+  const download = document.createElement('a');
+  download.href = chrome.runtime.getURL('sing-installer.tar.gz');
+  download.download = 'sing-installer.tar.gz';
+  download.click();
+  elements['install-sing-message'].textContent = 'Open sing-installer.tar.gz, then double-click Install Sing.command. After installation, click Check installation.';
+}
+
+/** Rechecks the native host after installation and refreshes locations. */
+async function checkSingInstallation() {
+  elements['check-sing-installation'].disabled = true;
+  try {
+    await refreshSingList();
+  } finally {
+    elements['check-sing-installation'].disabled = false;
+  }
+}
+
+elements['install-sing'].addEventListener('click', downloadSingInstaller);
+elements['check-sing-installation'].addEventListener('click', checkSingInstallation);
 
 (async () => {
   if (!await ensureCurrentBackground(send, chrome.runtime)) { return; }

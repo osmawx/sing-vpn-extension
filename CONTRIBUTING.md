@@ -16,7 +16,7 @@ npm ci
 npm run build
 npm test
 python3 -m unittest discover -s tests -p "test_*.py"
-shellcheck install.sh
+shellcheck install.sh "src/installer/Install Sing.command"
 ```
 
 ## Rules
@@ -55,3 +55,9 @@ Keep changes focused. Add tests for parsing, validation, failure paths, proxy ro
 - Keep one change per pull request. Never commit `extension-key.pem`, subscription URLs, proxy links, or real credentials.
 - Explain why the change is needed in the pull request description. List key changes and any checks you could not run.
 - Wait for CI checks and address review comments before merging. The maintainer decides when to merge.
+
+## Automatic release packages
+
+CI publishes prebuilt runtime assets only after all required CI jobs pass on a push to `main`. Source builds use `package.json`; release builds set `RELEASE_VERSION=1.3.<CI run number>` and package matching manifest/checksum metadata. `scripts/package_release.py` writes only allowlisted runtime code to `dist/`. Do not package developer checkouts, user configuration or credentials.
+
+For the initial rollout, merge and publish the standalone sing CLI release before the extension release; new users install that CLI asset through the prebuilt installer.

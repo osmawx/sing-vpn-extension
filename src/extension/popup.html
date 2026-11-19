@@ -61,7 +61,18 @@
           <dt>IP</dt><dd id="acc-ip">—</dd>
           <dt>Country</dt><dd id="acc-country">—</dd>
         </dl>
-        <h2 class="subheading">Exceptions <span class="muted">(open without VPN)</span></h2>
+        <div class="account-menu">
+          <button class="card account-menu-button" type="button" data-view="account-settings">Settings <span aria-hidden="true">›</span></button>
+          <button class="card account-menu-button" type="button" data-view="account-exceptions">Exceptions <span aria-hidden="true">›</span></button>
+        </div>
+      </section>
+
+      <section id="view-account-exceptions" class="view" hidden>
+        <header class="subview-head">
+          <button class="back-button" type="button" data-view="account" aria-label="Back to Account">‹ Account</button>
+          <h1>Exceptions</h1>
+        </header>
+        <p class="hint muted">These sites open without VPN.</p>
         <label class="switch-row">
           <input id="bypass-ru" type="checkbox">
           <span>All .ru, .su and .рф sites</span>
@@ -73,8 +84,37 @@
         </form>
         <ul id="exception-list" class="card exception-list"></ul>
         <p id="exception-message" class="error" hidden></p>
+      </section>
+
+      <section id="view-account-settings" class="view" hidden>
+        <header class="subview-head">
+          <button class="back-button" type="button" data-view="account" aria-label="Back to Account">‹ Account</button>
+          <h1>Settings</h1>
+        </header>
+        <div id="install-sing-panel" class="card add-panel">
+          <button id="install-sing" class="primary" type="button">Install local sing</button>
+          <p id="install-sing-message" class="hint muted" role="status">Install or repair local sing: download and open the macOS installer.</p>
+          <button id="check-sing-installation" class="secondary" type="button">Check installation</button>
+        </div>
+        <h2 class="subheading">Local versions</h2>
+        <dl class="card account-list">
+          <dt>sing</dt><dd id="sing-version">Checking…</dd>
+          <dt>Latest sing</dt><dd id="sing-latest">—</dd>
+          <dt>sing-box</dt><dd id="sing-box-version">Checking…</dd>
+          <dt>Latest sing-box</dt><dd id="sing-box-latest">—</dd>
+        </dl>
+        <button id="check-component-versions" class="secondary update-button" type="button">Check versions</button>
+        <div class="configuration-actions">
+          <button id="update-sing" class="primary" type="button">Update sing</button>
+          <button id="update-sing-box" class="primary" type="button">Update sing-box</button>
+        </div>
+        <p id="component-message" class="hint muted" role="status" hidden></p>
         <button id="update-extension" class="primary update-button" type="button">Update extension</button>
         <p id="update-message" class="hint muted" role="status" hidden></p>
+        <h2 class="subheading">Diagnostics</h2>
+        <button id="export-logs" class="primary update-button" type="button">Export logs</button>
+        <p class="hint muted">Recent local sing logs and browser status. Review the file before sharing: logs may include site addresses.</p>
+        <p id="logs-message" class="hint muted" role="status" hidden></p>
         <h2 class="subheading">Configuration</h2>
         <p class="hint muted">Backup includes passwords, subscription URLs and local sing servers. Keep the file private.</p>
         <div class="configuration-actions">

@@ -11,11 +11,51 @@ const SOURCE_DIR = path.join(PROJECT_DIR, 'src', 'extension');
 const BUILD_DIR = path.join(PROJECT_DIR, 'build');
 const JAVASCRIPT_FILES = ['background.js', 'popup.js', 'proxy-links.js', 'configuration.js', 'runtime-version.js'];
 
+/** Packages the fixed macOS launcher as a tar.gz with executable permissions. */
+function createInstallerArchive(contents) {
+  const header = Buffer.alloc(512);
+  header.write('Install Sing.command', 0);
+  header.write('0000755\0', 100);
+  header.write('0000000\0', 108);
+  header.write('0000000\0', 116);
+  header.write(`${contents.length.toString(8).padStart(11, '0')}\0`, 124);
+  header.write('00000000000\0', 136);
+  header.fill(32, 148, 156);
+  header.write('0', 156);
+  header.write('ustar\0', 257);
+  header.write('00', 263);
+  // Tar checksums treat the checksum field as eight spaces.
+  const checksum = header.reduce((sum, byte) => sum + byte, 0);
+  header.write(`${checksum.toString(8).padStart(6, '0')}\0 `, 148);
+  const padding = Buffer.alloc((512 - contents.length % 512) % 512);
+  const tar = Buffer.concat([header, contents, padding, Buffer.alloc(1024)]);
+  if (tar.length > 65535) { throw new Error('Installer exceeds one stored DEFLATE block'); }
+  // Store DEFLATE without compression so Node/zlib versions produce identical bytes.
+  const block = Buffer.alloc(5);
+  block[0] = 1;
+  block.writeUInt16LE(tar.length, 1);
+  block.writeUInt16LE(65535 ^ tar.length, 3);
+  // Gzip requires a CRC-32 checksum of the original tar bytes.
+  let gzipChecksum = 0xffffffff;
+  for (const byte of tar) {
+    gzipChecksum ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      gzipChecksum = (gzipChecksum >>> 1) ^ (-(gzipChecksum & 1) & 0xedb88320);
+    }
+  }
+  const footer = Buffer.alloc(8);
+  footer.writeUInt32LE((gzipChecksum ^ 0xffffffff) >>> 0, 0);
+  footer.writeUInt32LE(tar.length, 4);
+  return Buffer.concat([Buffer.from([31, 139, 8, 0, 0, 0, 0, 0, 0, 255]), block, tar, footer]);
+}
+
 /** Создаёт готовое расширение из исходных файлов. */
 async function buildExtension() {
   const stagingDirectory = await mkdtemp(path.join(PROJECT_DIR, '.build-'));
   try {
     await cp(path.join(SOURCE_DIR, 'icons'), path.join(stagingDirectory, 'icons'), { recursive: true });
+    const installer = await readFile(path.join(PROJECT_DIR, 'src', 'installer', 'Install Sing.command'));
+    await writeFile(path.join(stagingDirectory, 'sing-installer.tar.gz'), createInstallerArchive(installer));
 
     for (const filename of JAVASCRIPT_FILES) {
       const source = await readFile(path.join(SOURCE_DIR, filename), 'utf8');
@@ -44,8 +84,9 @@ async function buildExtension() {
 
     const manifest = JSON.parse(await readFile(path.join(SOURCE_DIR, 'manifest.json'), 'utf8'));
     const packageMetadata = JSON.parse(await readFile(path.join(PROJECT_DIR, 'package.json'), 'utf8'));
-    manifest.version = packageMetadata.version;
+    manifest.version = process.env.RELEASE_VERSION || packageMetadata.version;
     await writeFile(path.join(stagingDirectory, 'manifest.json'), `${JSON.stringify(manifest)}\n`);
+    await writeFile(path.join(stagingDirectory, 'release-info.json'), `${JSON.stringify({ managed: Boolean(process.env.RELEASE_VERSION) })}\n`);
 
     // Заменяем работающую сборку только после успешной обработки всех файлов.
     await rm(BUILD_DIR, { recursive: true, force: true });

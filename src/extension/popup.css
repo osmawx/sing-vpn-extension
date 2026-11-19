@@ -99,6 +99,11 @@ h1 { font-size: 22px; font-weight: 700; }
 .account-list { display: grid; grid-template-columns: auto 1fr; gap: 14px 16px; margin-top: 14px; padding: 18px; }
 .account-list dt { color: var(--muted); }
 .account-list dd { text-align: right; overflow-wrap: anywhere; }
+.account-menu { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
+.account-menu-button { display: flex; justify-content: space-between; width: 100%; padding: 18px; text-align: left; font-weight: 600; }
+.account-menu-button span, .back-button { color: var(--accent); }
+.subview-head { display: flex; align-items: center; gap: 18px; margin-bottom: 16px; }
+.back-button { padding: 8px 0; font-size: 14px; }
 
 .tabs { display: flex; background: #1b2132; border-top: 1px solid var(--card-border); }
 .tab {
@@ -109,6 +114,7 @@ h1 { font-size: 22px; font-weight: 700; }
 
 .icon-button { width: 36px; height: 36px; border: 1px solid #424a62; border-radius: 50%; font-size: 20px; color: var(--accent); }
 .add-panel { display: flex; flex-direction: column; gap: 10px; padding: 14px; margin-bottom: 14px; }
+.add-panel[hidden] { display: none; }
 .add-panel textarea, .add-panel input {
   width: 100%; padding: 10px 12px; color: var(--text); font: 13px ui-monospace, Menlo, monospace;
   background: #151a2b; border: 1px solid #424a62; border-radius: 12px; outline: none; resize: none;

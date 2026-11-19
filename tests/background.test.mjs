@@ -6,16 +6,22 @@ test('temporary host failure keeps cached sing locations', async () => {
   const storage = { servers: [], singServers: [cachedLocation], connectedId: cachedLocation.id };
   let messageListener;
   let proxyClears = 0;
+  let nativeLogs;
   const startupListeners = [];
   const addListener = () => {};
 
   globalThis.chrome = {
     runtime: {
       id: 'test-extension',
+      getManifest: () => ({ version: '1.2.1' }),
       onMessage: { addListener: (listener) => { messageListener = listener; } },
       onStartup: { addListener: (listener) => startupListeners.push(listener) },
       onInstalled: { addListener },
       sendNativeMessage: (_name, _message, reply) => {
+        if (_message.action === 'export_logs' && nativeLogs) {
+          reply(nativeLogs);
+          return;
+        }
         if (_message.action === 'check_update') {
           reply({ ok: true, available: true });
           return;
@@ -51,6 +57,22 @@ test('temporary host failure keeps cached sing locations', async () => {
     assert.equal(proxyClears, 1);
     await startupListeners[1]();
     assert.deepEqual(storage.extensionUpdate, { ok: true, available: true });
+    storage.subscriptionUrl = 'https://example.test/private-subscription';
+    storage.servers = [{ password: 'fake-password', username: 'fake-user' }];
+    const missingHostLogs = await new Promise((resolve) => {
+      messageListener({ type: 'exportLogs' }, { id: chrome.runtime.id }, resolve);
+    });
+    assert.equal(missingHostLogs.ok, true);
+    assert.equal(missingHostLogs.report.native.status, 'host-unavailable');
+    assert.equal(missingHostLogs.report.browser.serverCount, 1);
+    assert.ok(!JSON.stringify(missingHostLogs).includes('private-subscription'));
+    assert.ok(!JSON.stringify(missingHostLogs).includes('fake-password'));
+    nativeLogs = { ok: true, status: 'available', text: 'ERROR dial timeout\n', truncated: false };
+    const availableLogs = await new Promise((resolve) => {
+      messageListener({ type: 'exportLogs' }, { id: chrome.runtime.id }, resolve);
+    });
+    assert.equal(availableLogs.report.native.text, 'ERROR dial timeout\n');
+    assert.equal(proxyClears, 1);
   } finally {
     delete globalThis.chrome;
   }

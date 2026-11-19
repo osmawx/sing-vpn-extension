@@ -98,6 +98,12 @@ ensure_node() {
 
 # Собирает расширение перед регистрацией native host.
 ensure_build() {
+  if [[ "${1:-}" == "--prebuilt" ]]; then
+    [[ -f "$REPO_DIR/release.json" && -f "$REPO_DIR/build/manifest.json" ]] || {
+      echo "sing-vpn: incomplete release package" >&2; return 1;
+    }
+    return
+  fi
   ensure_node
   (cd "$REPO_DIR" && npm ci --no-audit --no-fund && npm run build)
   local filename
@@ -134,6 +140,10 @@ ensure_dependencies() {
 # Ставит sing из соседнего checkout либо из отдельного checkout в каталоге приложения.
 ensure_sing() {
   if [[ -x "$SING_BIN" && -f "$SING_SELECT_SCRIPT" && -f "$SING_PROXYCHAINS_CONFIG" ]]; then
+    return
+  fi
+  if [[ "${1:-}" == "--prebuilt" ]]; then
+    PATH="$HOST_PATH" python3 -I "$REPO_DIR/src/host/release_tools.py" install-sing
     return
   fi
   local source_dir="$REPO_DIR/../sing"
@@ -196,9 +206,12 @@ install_generated_file() {
 
 PATH="$HOST_PATH:$PATH"
 export PATH
-ensure_build
+ensure_build "${1:-}"
 ensure_dependencies
-ensure_sing
+if [[ "${1:-}" == "--prebuilt" ]]; then
+  REPO_DIR="$(PATH="$HOST_PATH" python3 -I "$REPO_DIR/src/host/release_tools.py" install-extension-from "$REPO_DIR")"
+fi
+ensure_sing "${1:-}"
 PYTHON_BIN="$(PATH="$HOST_PATH" command -v python3)"
 
 # Chrome запускает host с пустым окружением, поэтому фиксируем абсолютный python
