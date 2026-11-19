@@ -231,18 +231,20 @@ class UpdateTest(unittest.TestCase):
             response = sing_host.dispatch({"action": "update_sing"})
         self.assertEqual(response, {"ok": True, "version": "1.0.1"})
 
-    def test_engine_update_opens_private_terminal_launcher(self):
-        """Homebrew runs visibly in Terminal rather than as a browser child process."""
+    def test_engine_update_sends_fixed_command_to_terminal_without_launcher(self):
+        """No browser-created executable file is handed to Launch Services."""
         with tempfile.TemporaryDirectory() as directory, patch.object(sing_host, "HOME", directory), patch.object(
                 sing_host, "find_brew", return_value="/fake path/brew"), patch.object(
                 sing_host, "run_update_command", return_value=subprocess.CompletedProcess([], 0)) as command:
             result = sing_host.handle_update_sing_box({})
             self.assertTrue(result["started"])
             arguments = command.call_args.args[0]
-            self.assertEqual(arguments[:3], ["/usr/bin/open", "-a", "Terminal"])
-            launcher = Path(arguments[3])
-            self.assertEqual(launcher.stat().st_mode & 0o777, 0o700)
-            self.assertIn("'/fake path/brew' upgrade sing-box", launcher.read_text())
+            self.assertEqual(arguments[:2], ["/usr/bin/osascript", "-e"])
+            self.assertIn('tell application "Terminal"', arguments[2])
+            self.assertIn("'/fake path/brew' upgrade sing-box", arguments[3])
+            self.assertNotIn("/fake path/brew", arguments[2])
+            subprocess.run(["/bin/bash", "-n", "-c", arguments[3]], check=True)
+            self.assertEqual(list(Path(directory).rglob("*.command")), [])
 
     def test_engine_upgrade_failure_is_safe(self):
         """Homebrew output is not echoed to the browser or logs."""

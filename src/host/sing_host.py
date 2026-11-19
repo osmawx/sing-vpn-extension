@@ -764,30 +764,25 @@ def handle_update_sing(_message):
 
 
 def handle_update_sing_box(_message):
-    """Run Homebrew visibly in Terminal, outside the browser's execution context."""
+    """Ask Terminal to run the fixed upgrade command without an executable launcher file."""
     brew = find_brew()
-    directory = os.path.join(HOME, ".local", "share", "sing-vpn")
-    os.makedirs(directory, mode=0o700, exist_ok=True)
-    descriptor, launcher = tempfile.mkstemp(prefix="Update-sing-box-", suffix=".command", dir=directory)
-    try:
-        with os.fdopen(descriptor, "w") as output:
-            output.write("#!/bin/bash\n" + shlex.quote(brew) + " upgrade sing-box\n"
-                         "update_status=$?\n"
-                         "if [ \"$update_status\" -eq 0 ]; then\n"
-                         "  echo 'sing-box updated. Reconnect local sing in the extension.'\n"
-                         "else\n"
-                         "  echo 'Update failed. Review the Homebrew error above.'\n"
-                         "fi\n"
-                         "rm -f -- \"$0\"\n"
-                         "exit \"$update_status\"\n")
-        os.chmod(launcher, 0o700)
-        opened = run_update_command(["/usr/bin/open", "-a", "Terminal", launcher], 10)
-        if opened.returncode != 0:
-            raise RuntimeError("Could not open Terminal; run brew upgrade sing-box in Terminal.")
-    except (OSError, RuntimeError):
-        with contextlib.suppress(OSError):
-            os.unlink(launcher)
-        raise
+    upgrade_command = (shlex.quote(brew) + " upgrade sing-box; "
+                       "update_status=$?; "
+                       "if [ \"$update_status\" -eq 0 ]; then "
+                       "echo 'sing-box updated. Reconnect local sing in the extension.'; "
+                       "else echo 'Update failed. Review the Homebrew error above.'; fi")
+    # Pass shell text as an argument, never interpolate it into AppleScript source.
+    script = ("on run commandArguments\n"
+              "set upgradeCommand to item 1 of commandArguments\n"
+              'tell application "Terminal"\n'
+              "activate\n"
+              "do script upgradeCommand\n"
+              "end tell\n"
+              "end run")
+    opened = run_update_command(["/usr/bin/osascript", "-e", script, upgrade_command], 60)
+    if opened.returncode != 0:
+        raise RuntimeError("Could not start Terminal. Allow Terminal control in macOS "
+                           "Privacy & Security > Automation, or run brew upgrade sing-box in Terminal.")
     return {"started": True}
 
 
