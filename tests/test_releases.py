@@ -109,15 +109,25 @@ class ReleaseInstallTest(unittest.TestCase):
                 release_tools.activate(source, target)
         self.assertEqual((target / 'marker').read_text(), 'previous')
 
-    def test_metadata_rejects_foreign_asset_url(self):
-        """Release assets must belong to the fixed official repository."""
-        with patch.object(release_tools, 'download', return_value=json.dumps({
-            'tag_name': 'v1.3.1', 'assets': [
-                {'name': 'sing-vpn-macos.tar.gz', 'browser_download_url': 'https://evil.invalid/code'},
-                {'name': 'sing-vpn-macos.tar.gz.sha256', 'browser_download_url': 'https://evil.invalid/hash'},
-            ]}).encode()):
+    def test_latest_rejects_foreign_redirect(self):
+        """A forged final redirect cannot introduce a foreign release asset URL."""
+        with patch.object(release_tools.urllib.request, 'build_opener') as opener:
+            response = opener.return_value.open.return_value.__enter__.return_value
+            response.geturl.return_value = 'https://evil.invalid/releases/tag/v1.3.1'
             with self.assertRaises(ValueError):
                 release_tools.latest('extension')
+
+    def test_latest_uses_public_head_without_rate_limited_api(self):
+        """Public GitHub release redirects work after anonymous API quota is exhausted."""
+        with patch.object(release_tools.urllib.request, 'build_opener') as opener:
+            response = opener.return_value.open.return_value.__enter__.return_value
+            response.geturl.return_value = 'https://github.com/osmawx/sing/releases/tag/v1.0.12'
+            result = release_tools.latest('sing')
+            request = opener.return_value.open.call_args.args[0]
+        self.assertEqual(request.full_url, 'https://github.com/osmawx/sing/releases/latest')
+        self.assertEqual(request.get_method(), 'HEAD')
+        self.assertEqual(result['version'], '1.0.12')
+        self.assertEqual(result['url'], 'https://github.com/osmawx/sing/releases/download/v1.0.12/sing-macos.tar.gz')
 
     def sing_code(self):
         """Create fake standalone CLI files for installation tests."""

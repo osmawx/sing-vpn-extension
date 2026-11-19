@@ -63,20 +63,23 @@ def download(url, maximum=MAX_ARCHIVE_BYTES):
 
 
 def latest(component):
-    """Resolve a stable official release and its checksum asset."""
+    """Resolve GitHub's public latest redirect without anonymous API rate limits."""
     repository = REPOSITORIES[component]
-    metadata = json.loads(download(f'https://api.github.com/repos/osmawx/{repository}/releases/latest', MAX_JSON_BYTES))
-    tag = metadata.get('tag_name', '')
-    version = tag.removeprefix('v')
-    version_tuple(version)
-    if metadata.get('draft') or metadata.get('prerelease'):
-        raise ValueError('release is not stable')
-    asset_name = ASSETS[component]
-    assets = {asset['name']: asset['browser_download_url'] for asset in metadata.get('assets', [])}
-    prefix = f'https://github.com/osmawx/{repository}/releases/download/{tag}/'
-    if any(assets.get(name) != prefix + name for name in (asset_name, asset_name + '.sha256')):
-        raise ValueError('missing or untrusted release asset')
-    return {'version': version, 'url': assets[asset_name], 'checksumUrl': assets[asset_name + '.sha256']}
+    prefix = f'https://github.com/osmawx/{repository}/releases/'
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), SafeRedirect())
+    request = urllib.request.Request(prefix + 'latest', method='HEAD',
+                                     headers={'User-Agent': 'Sing-VPN-Updater'})
+    try:
+        with opener.open(request, timeout=30) as response:
+            resolved = response.geturl()
+    except (OSError, urllib.error.URLError):
+        raise RuntimeError('release check failed; check GitHub access') from None
+    match = re.fullmatch(re.escape(prefix) + r'tag/v(\d{1,5}\.\d{1,5}\.\d{1,5})', resolved)
+    if not match:
+        raise ValueError('untrusted or unstable latest release URL')
+    version = match.group(1)
+    asset_url = prefix + 'download/v' + version + '/' + ASSETS[component]
+    return {'version': version, 'url': asset_url, 'checksumUrl': asset_url + '.sha256'}
 
 
 def destination(component):
