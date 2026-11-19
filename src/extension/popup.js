@@ -592,7 +592,9 @@ async function updateLocalComponent(type) {
   elements['update-sing-box'].disabled = true;
   const message = elements['component-message'];
   message.hidden = false;
-  message.textContent = 'Updating local component…';
+  message.textContent = type === 'updateSingBox'
+    ? 'Opening Terminal… Allow Terminal control if macOS asks.'
+    : 'Updating local component…';
   try {
     const result = await send({ type });
     if (!result.ok) {
