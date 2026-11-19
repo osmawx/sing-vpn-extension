@@ -287,7 +287,7 @@ def register_host():
     try:
         with os.fdopen(descriptor, 'w') as output:
             output.write(contents)
-        os.chmod(temporary, 0o755)
+        os.chmod(temporary, 0o700)
         if wrapper.is_dir():
             raise ValueError('native host wrapper must not be a directory')
         if os.path.lexists(wrapper):

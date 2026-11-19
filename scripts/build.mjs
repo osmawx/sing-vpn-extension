@@ -1,7 +1,6 @@
 import { cp, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { gzipSync } from 'node:zlib';
 
 import CleanCSS from 'clean-css';
 import { minify as minifyHtml } from 'html-minifier-terser';
@@ -29,7 +28,25 @@ function createInstallerArchive(contents) {
   const checksum = header.reduce((sum, byte) => sum + byte, 0);
   header.write(`${checksum.toString(8).padStart(6, '0')}\0 `, 148);
   const padding = Buffer.alloc((512 - contents.length % 512) % 512);
-  return gzipSync(Buffer.concat([header, contents, padding, Buffer.alloc(1024)]));
+  const tar = Buffer.concat([header, contents, padding, Buffer.alloc(1024)]);
+  if (tar.length > 65535) { throw new Error('Installer exceeds one stored DEFLATE block'); }
+  // Store DEFLATE without compression so Node/zlib versions produce identical bytes.
+  const block = Buffer.alloc(5);
+  block[0] = 1;
+  block.writeUInt16LE(tar.length, 1);
+  block.writeUInt16LE(65535 ^ tar.length, 3);
+  // Gzip requires a CRC-32 checksum of the original tar bytes.
+  let gzipChecksum = 0xffffffff;
+  for (const byte of tar) {
+    gzipChecksum ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      gzipChecksum = (gzipChecksum >>> 1) ^ (-(gzipChecksum & 1) & 0xedb88320);
+    }
+  }
+  const footer = Buffer.alloc(8);
+  footer.writeUInt32LE((gzipChecksum ^ 0xffffffff) >>> 0, 0);
+  footer.writeUInt32LE(tar.length, 4);
+  return Buffer.concat([Buffer.from([31, 139, 8, 0, 0, 0, 0, 0, 0, 255]), block, tar, footer]);
 }
 
 /** Создаёт готовое расширение из исходных файлов. */

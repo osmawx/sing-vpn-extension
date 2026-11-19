@@ -1,6 +1,7 @@
 """Test the downloadable macOS release installer without network or real installation."""
 
 import hashlib
+import gzip
 import io
 import os
 import subprocess
@@ -17,6 +18,9 @@ class DownloadableInstallerTest(unittest.TestCase):
 
     def test_archive_contains_executable_launcher(self):
         """Archive Utility extracts an executable command matching the source."""
+        contents = (PROJECT_DIR / 'build/sing-installer.tar.gz').read_bytes()
+        self.assertEqual(contents[:10], bytes([31, 139, 8, 0, 0, 0, 0, 0, 0, 255]))
+        self.assertTrue(gzip.decompress(contents))
         with tarfile.open(PROJECT_DIR / 'build/sing-installer.tar.gz') as archive:
             self.assertEqual(archive.getnames(), ['Install Sing.command'])
             member = archive.getmembers()[0]
